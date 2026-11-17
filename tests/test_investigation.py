@@ -70,9 +70,22 @@ class InvestigationTests(unittest.TestCase):
             return dict(spec,started_at=m.stamp(1800000000+clock.now),ok=True,latency_ms=5)
         with patch.object(lab.time,'monotonic',side_effect=lambda:clock.now), patch.object(m,'probe',side_effect=probe), patch.object(m,'diagnostics',return_value={'interface':'en1'}), patch.object(performance,'active',return_value=False):
             rows=lab.capture(m.DEFAULT,self.root,3,'before',clock)
-        self.assertEqual(len(rows),9)
+        self.assertEqual(len(rows),12)
         self.assertEqual(len({r['time'] for r in rows}),3)
         self.assertTrue(all(r['loaded'] is False for r in rows))
+        self.assertIn('Local loopback',{r['target'] for r in rows})
+        self.assertTrue(all(r['dispatch_delay_ms'] >= 0 and r['round_started_at'] for r in rows))
+
+    def test_closeup_includes_only_configured_peer_and_satellite_pings(self):
+        clock=Clock()
+        c=dict(m.DEFAULT,peer='synthetic.local',satellites=['192.0.2.10','192.0.2.11'])
+        def probe(spec,timeout):
+            self.assertEqual(spec['kind'],'icmp')
+            return dict(spec,started_at=m.stamp(1800000000),ok=True,latency_ms=1,elapsed_ms=8)
+        with patch.object(lab.time,'monotonic',side_effect=lambda:clock.now),patch.object(m,'probe',side_effect=probe),patch.object(m,'diagnostics',return_value={'interface':'en1'}),patch.object(performance,'active',return_value=False):
+            rows=lab.capture(c,self.root,1,'observation',clock)
+        self.assertEqual({r['target'] for r in rows},{'Main Orbi','Cloudflare','Google','Local loopback','Other Mini','Satellite 1','Satellite 2'})
+        self.assertTrue(all(r['elapsed_ms']==8 for r in rows))
 
     def test_paused_capture_and_stop_send_no_packets(self):
         stop=Clock();stop.set()
@@ -89,7 +102,7 @@ class InvestigationTests(unittest.TestCase):
         self.assertTrue(all('raw' not in r for r in latest))
         self.assertEqual(len(list(lab.journal(self.root).records())),5)
         self.assertTrue(all('raw' in r for r in lab.journal(self.root).records()))
-        self.assertEqual(lab.journal(self.root).count,4)
+        self.assertEqual(lab.journal(self.root).count,8)
 
     def test_no_load_or_listener_without_explicit_confirmation(self):
         with patch.object(lab,'command') as command:

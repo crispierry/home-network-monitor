@@ -24,7 +24,7 @@ def main():
         return 1
     job = manage.launchctl('print', f'gui/{os.getuid()}/'+manage.LABEL, check=False)
     pid = re.search(r'^\s*pid = (\d+)', job.stdout, re.MULTILINE)
-    files = ('monitor.py', 'manage.py', 'performance.py', 'analysis.py', 'devices.py', 'agent_query.py', 'sync.py', 'peer_transport.py', 'diagnostics.py', 'host_metrics.py', 'investigation.py', 'AGENTS.md', 'service.c',
+    files = ('monitor.py', 'manage.py', 'performance.py', 'analysis.py', 'devices.py', 'agent_query.py', 'sync.py', 'peer_transport.py', 'diagnostics.py', 'host_metrics.py', 'investigation.py', 'AGENTS.md', 'service.c', 'wifi.swift',
              'README.md', 'CONTRIBUTING.md', 'DEPLOYMENT.md', 'DASHBOARD_DESIGN.md', 'DIAGNOSTIC_RESEARCH.md', 'ACKNOWLEDGMENTS.md', 'CODE_REVIEW.md', 'INVESTIGATIONS.md', 'LICENSE', 'SECURITY.md', 'ARCHITECTURE.md')
     matches = {name: (monitor.BASE/name).exists() and
                hashlib.sha256((SOURCE/name).read_bytes()).digest() ==
@@ -43,6 +43,10 @@ def main():
     last_successful_speed = next((entry for entry in reversed(speed) if entry.get('status') == 'success'), {})
     app = Path.home()/'Applications/Network Monitor.app'
     dashboard_signature = subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app)], capture_output=True)
+    helper = monitor.BASE/'wifi-observer'
+    helper_signature = subprocess.run(['/usr/bin/codesign','--verify','--strict',str(helper)],capture_output=True)
+    helper_marker = monitor.BASE/'wifi-observer.sha256'
+    helper_valid = helper.is_file() and helper_signature.returncode == 0 and helper_marker.is_file() and helper_marker.read_text() == hashlib.sha256((SOURCE/'wifi.swift').read_bytes()).hexdigest()
     manifest = app/'Contents/Resources/source.plist'
     dashboard_matches = False
     if manifest.exists():
@@ -63,7 +67,7 @@ def main():
         open_incident=state['incident']['id'] if state['incident'] else None,
         installed_files_match=matches, app_signature_valid=signature.returncode == 0,
         dashboard_installed=app.exists(), dashboard_signature_valid=dashboard_signature.returncode == 0,
-        dashboard_sources_match=dashboard_matches,
+        dashboard_sources_match=dashboard_matches, wifi_helper_valid=helper_valid,
         diagnostics_fresh=context_fresh,
         diagnostic_age_seconds=round(context_age, 1) if context_age is not None else None,
         gateway_pages={key: value.get('status') for key, value in context.get('gateway', {}).items()},
@@ -75,7 +79,7 @@ def main():
                       ('started_at', 'download_mbps', 'upload_mbps', 'idle_latency_ms')}
         ), indent=None if '--compact' in sys.argv else 2))
     return 0 if (running and 0 <= age < state['interval_seconds']*3 and all(matches.values())
-                 and signature.returncode == 0 and dashboard_signature.returncode == 0 and dashboard_matches and context_fresh) else 1
+                 and signature.returncode == 0 and dashboard_signature.returncode == 0 and dashboard_matches and context_fresh and helper_valid) else 1
 
 
 if __name__ == '__main__':

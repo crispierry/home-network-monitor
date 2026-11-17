@@ -41,6 +41,18 @@ def records(root, prefix):
     yield from m.read_records(sorted(p for p in root.glob(prefix+'-*.jsonl') if not p.is_symlink() and p.is_file()))
 
 
+def wifi_status(raw, now, recorder_stale=False):
+    age = None
+    if isinstance(raw,dict):
+        try:
+            age = now-m.epoch(raw['at'])
+        except (ValueError,TypeError,KeyError):
+            pass
+    fresh = age is not None and math.isfinite(age) and -5 <= age <= 120
+    return dict(latest=raw if isinstance(raw,dict) else None,stale=recorder_stale or not fresh,
+        sample_age_seconds=round(age,1) if age is not None and math.isfinite(age) else None)
+
+
 def valid_sample(row):
     try:
         if not math.isfinite(m.epoch(row['started_at'])):
@@ -136,6 +148,7 @@ def briefing(root, hours=24, include_history=True, now=None):
         host=state.get('host'), source_directory=str(root), window=dict(start=m.stamp(start), end=m.stamp(now), hours=hours),
         recorder=dict(last_completed_at=completed, sample_age_seconds=round(age, 1) if age is not None else None, stale=stale, paused=paused),
         internet=health, network=state.get('network'), checks=checks, devices=devices,
+        wifi=wifi_status(state.get('wifi'),now,stale),
         diagnostics=diagnostic_status(state.get('diagnostic_snapshot'), now),
         hypotheses=state.get('latest_hypotheses', []) if not stale else [],
         limitations=['Local outbound IPv4 observations; not whole-home coverage or camera cloud health.',

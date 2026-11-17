@@ -372,6 +372,8 @@ struct InvestigationGroup: Codable, Identifiable {
     var maximum: Double?
     var id: String { target+phase+interface }
 }
+let investigationTargets = Set(["Main Orbi","Cloudflare","Google","Local loopback","Other Mini"] + (1...8).map { "Satellite \($0)" })
+
 struct InvestigationReport: Codable, Identifiable {
     var schema: String
     var id: String
@@ -388,9 +390,9 @@ struct InvestigationReport: Codable, Identifiable {
     var valid: Bool {
         schema == "network-monitor.investigation.v1" && time.isFinite && end.isFinite && time >= 0 && end >= time && end-time <= 300 &&
         ["close-up","load-comparison","routes","lan"].contains(kind) && ["complete","incomplete","cancelled"].contains(status) && id.count <= 64 && reason.count <= 2000 && host.count <= 100 && details.count <= 20 && details.allSatisfy { $0.count <= 2000 } &&
-        points.count <= 300 && groups.count <= 36 && Set(groups.map(\.id)).count == groups.count &&
-        points.allSatisfy { ["Main Orbi","Cloudflare","Google"].contains($0.target) && ["before","during","after","observation"].contains($0.phase) && $0.interface.count <= 30 && $0.time.isFinite && $0.time >= time-5 && $0.time <= end+5 && ($0.latency == nil || ($0.latency!.isFinite && $0.latency! >= 0)) } &&
-        groups.allSatisfy { ["Main Orbi","Cloudflare","Google"].contains($0.target) && ["before","during","after","observation"].contains($0.phase) && $0.interface.count <= 30 && $0.attempted > 0 && $0.attempted <= 300 && $0.missed >= 0 && $0.missed <= $0.attempted && $0.loss.isFinite && abs($0.loss-100*Double($0.missed)/Double($0.attempted)) < 0.001 && [$0.p10,$0.median,$0.p95,$0.maximum].allSatisfy { $0 == nil || ($0!.isFinite && $0! >= 0) } }
+        points.count <= 1800 && groups.count <= 64 && Set(groups.map(\.id)).count == groups.count &&
+        points.allSatisfy { investigationTargets.contains($0.target) && ["before","during","after","observation"].contains($0.phase) && $0.interface.count <= 30 && $0.time.isFinite && $0.time >= time-5 && $0.time <= end+5 && ($0.latency == nil || ($0.latency!.isFinite && $0.latency! >= 0)) } &&
+        groups.allSatisfy { investigationTargets.contains($0.target) && ["before","during","after","observation"].contains($0.phase) && $0.interface.count <= 30 && $0.attempted > 0 && $0.attempted <= 300 && $0.missed >= 0 && $0.missed <= $0.attempted && $0.loss.isFinite && abs($0.loss-100*Double($0.missed)/Double($0.attempted)) < 0.001 && [$0.p10,$0.median,$0.p95,$0.maximum].allSatisfy { $0 == nil || ($0!.isFinite && $0! >= 0) } }
     }
 }
 
@@ -586,7 +588,7 @@ final class EvidenceReader: @unchecked Sendable {
         if notes.contains(where: { $0.recorded < now-180*86400 }) { notes.removeAll { $0.recorded < now-180*86400 } }
         var investigations: [InvestigationReport] = []
         let reportURL = root.appendingPathComponent("investigation-latest.json")
-        if let size = try? reportURL.resourceValues(forKeys:[.fileSizeKey]).fileSize, size <= 512*1024,
+        if let size = try? reportURL.resourceValues(forKeys:[.fileSizeKey]).fileSize, size <= 1024*1024,
            let bytes = try? Data(contentsOf:reportURL), let reports = try? JSONDecoder().decode([InvestigationReport].self,from:bytes), reports.count <= 4 {
             investigations = reports.filter { $0.valid && $0.end <= now+5 && $0.end >= now-30*86400 }
         }

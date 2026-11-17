@@ -48,6 +48,24 @@ def build_service_app(source):
     return binary
 
 
+def build_wifi_helper(source):
+    destination = monitor.BASE/'wifi-observer'
+    marker = monitor.BASE/'wifi-observer.sha256'
+    if destination.is_symlink() or marker.is_symlink():
+        raise ValueError('Wi-Fi helper symlink refused')
+    digest = hashlib.sha256((source/'wifi.swift').read_bytes()).hexdigest()
+    if destination.exists() and marker.exists() and marker.read_text() == digest:
+        return
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='wifi-build-',dir=monitor.BASE) as folder:
+        binary = Path(folder)/'wifi-observer'
+        subprocess.run(['/usr/bin/xcrun','swiftc','-O','-framework','CoreWLAN',str(source/'wifi.swift'),'-o',str(binary)],check=True)
+        subprocess.run(['/usr/bin/codesign','--force','--sign','-',str(binary)],check=True)
+        binary.chmod(0o700)
+        binary.replace(destination)
+    monitor.atomic(marker,digest)
+
+
 def launchctl(*args, check=True):
     return subprocess.run(['/bin/launchctl', *args], check=check, capture_output=True, text=True)
 
@@ -128,6 +146,7 @@ def install(source, expected_host=None, config_path=None, devices_path=None):
         cadence_migration(c, previous, existing)
 
     service = build_service_app(source)
+    build_wifi_helper(source)
     stop_service(domain)
 
     existing = monitor.read_state(monitor.DATA)
@@ -147,7 +166,7 @@ def install(source, expected_host=None, config_path=None, devices_path=None):
                     previous_hours=previous['speed_hours'], speed_hours=c['speed_hours'],
                     speed_slot=c['speed_slot'], timezone='America/Los_Angeles',
                     note='Checkpoint and incident history preserved. No catch-up speed tests.'))
-    for name in ('monitor.py', 'manage.py', 'performance.py', 'analysis.py', 'devices.py', 'agent_query.py', 'sync.py', 'peer_transport.py', 'diagnostics.py', 'host_metrics.py', 'investigation.py', 'AGENTS.md', 'service.c',
+    for name in ('monitor.py', 'manage.py', 'performance.py', 'analysis.py', 'devices.py', 'agent_query.py', 'sync.py', 'peer_transport.py', 'diagnostics.py', 'host_metrics.py', 'investigation.py', 'AGENTS.md', 'service.c', 'wifi.swift',
                  'README.md', 'CONTRIBUTING.md', 'DEPLOYMENT.md', 'DASHBOARD_DESIGN.md', 'DIAGNOSTIC_RESEARCH.md', 'ACKNOWLEDGMENTS.md', 'CODE_REVIEW.md', 'INVESTIGATIONS.md', 'LICENSE', 'SECURITY.md', 'ARCHITECTURE.md'):
         src, dst = source/name, monitor.BASE/name
         if src.resolve() != dst.resolve():

@@ -64,3 +64,13 @@ The interruption calculation intersects confirmed HTTPS failure episodes for the
 Visual switching verification exposed repeated full-history filtering inside the older path Canvas drawing loop. Bounds and spans are now captured once per render rather than rescanned for every drawn segment. Latency chart captions explicitly disclose peak-preserving reduction; zoom still shows original measurements.
 
 Validation: 117 offline Python tests and native data tests pass, including new interruption timing and classification cases. The Apple Silicon app builds and passes local signature verification. Deployment preserves recorder settings, history, pairing and speed-test schedules; no bandwidth test or router change is part of this update.
+
+## 2.7.1 wireless latency evidence
+
+Close-up rounds now include local loopback plus configured satellite and peer ICMP checks. Raw points include round timestamps, worker dispatch delays and subprocess elapsed time. Before/after context retains dated Wi-Fi state, host metrics, interface counters and allowlisted power settings. The native path selector and evidence validation accept the bounded additional targets. These are diagnostic episodes; they do not change incident thresholds or imply an equipment diagnosis.
+
+A locally compiled, signed CoreWLAN helper reads current interface metrics without scanning or changing settings. BSSID remains explicitly unavailable when macOS withholds it. The installer refuses helper/marker symlinks and replaces the executable atomically before restarting collection. The helper normally runs once per minute, with a 30-second minimum during slow router pings; it adds no launch job or listener. Latest-state agent queries report independent Wi-Fi freshness.
+
+Investigation raw retention is capped at eight 4 MiB segments with a 30-day age ceiling; size may shorten that period. Latest summaries have a 1 MiB read limit. Automatic capture cooldown, primary 15-second cadence, original schedules and pairing are preserved. Raw close-up context stays on its source Mac unless explicitly exported.
+
+Validation: 122 offline Python tests and native evidence tests pass. Added checks cover optional control targets, timing fields, failed Wi-Fi providers, stale/malformed Wi-Fi readings, safe power-output filtering, and dashboard target allowlisting. The helper and native dashboard compile and pass local code-signature verification. Foreground helper runs on the deployment Mac took roughly 14–16 ms elapsed in three measurements; this is not a CPU benchmark or guarantee for other hardware.

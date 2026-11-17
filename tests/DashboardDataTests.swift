@@ -84,6 +84,13 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
         try require(!jitter.contains{$0.status == -1},"Subsecond scheduler jitter is not an outage")
         var capture = InvestigationReport(schema:"network-monitor.investigation.v1",id:"synthetic",kind:"close-up",reason:"fixture",host:"Synthetic-Mini",time:now-60,end:now,status:"complete",details:[],groups:[],points:[.init(time:now-5,target:"Cloudflare",phase:"observation",interface:"en1",ok:false,latency:nil)])
         try require(capture.valid,"A missed reply in a bounded diagnostic session is valid evidence")
+        capture.points[0].target = "Local loopback"
+        try require(capture.valid,"Local control measurements remain visible in the dashboard")
+        capture.points[0].target = "Satellite 2"
+        try require(capture.valid,"Configured satellite measurements remain visible")
+        capture.points[0].target = "Unexpected target"
+        try require(!capture.valid,"Unknown diagnostic targets remain rejected")
+        capture.points[0].target = "Cloudflare"
         capture.points[0].latency = -1
         try require(!capture.valid,"Reject negative investigation latency")
         capture.points[0].latency = nil

@@ -23,15 +23,22 @@ NAMES = {'orbi_icmp':'Main Orbi', 'cloudflare_icmp':'Cloudflare', 'google_icmp':
 MAX_OUTPUT = 65536
 
 
+def probe_name(key):
+    if key in NAMES: return NAMES[key]
+    if key == 'loopback_icmp': return 'Local loopback'
+    if key == 'peer_icmp': return 'Other Mini'
+    return key.removesuffix('_icmp').replace('_',' ').title()
+
+
 def journal(data):
-    return m.Journal(data, 'investigations', 2*1024**2, 4, 30)
+    return m.Journal(data, 'investigations', 4*1024**2, 8, 30)
 
 
 def recent(data):
     try:
         path = data/'investigation-latest.json'
-        if path.stat().st_size > 512*1024: return []
-        value = m.read_json(path, 512*1024)
+        if path.stat().st_size > 1024*1024: return []
+        value = m.read_json(path, 1024*1024)
         return [r for r in value if isinstance(r,dict) and type(r.get('end')) in (int,float) and time.time()-30*86400 <= r['end'] <= time.time()+5] if isinstance(value, list) and len(value) <= 4 else []
     except (OSError, ValueError):
         return []
@@ -91,19 +98,27 @@ def save(data, report):
 def capture(c, data, seconds, phase, stop=None):
 
     stop = stop or threading.Event()
-    targets = [s for s in m.specs(c) if s['id'] in TARGETS]
+    targets = [s for s in m.specs(c) if s['id'] in TARGETS or s['id']=='peer_icmp' or (s['id'].startswith('satellite_') and s['kind']=='icmp')]
+    targets.append(dict(id='loopback_icmp',kind='icmp',target='127.0.0.1'))
     interface = m.diagnostics().get('interface') or 'unknown'
     rows, deadline = [], time.monotonic()+seconds
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         while time.monotonic() < deadline and not stop.is_set() and not paused(data):
             tick = time.monotonic()
+            round_at = m.stamp()
             label = phase() if callable(phase) else phase
             import performance
             loaded = performance.active(data)
-            probes = list(pool.map(lambda s: m.probe(s, 1), targets))
+            def measured(spec):
+                dispatched = time.monotonic()
+                result = m.probe(spec,1)
+                result['dispatch_delay_ms'] = round((dispatched-tick)*1000,3)
+                return result
+            probes = list(pool.map(measured, targets))
             for p in probes:
-                rows.append(dict(time=m.epoch(p['started_at']), target=NAMES[p['id']], phase=label,
-                                 interface=interface, ok=p['ok'], latency=p['latency_ms'], loaded=loaded))
+                rows.append(dict(time=m.epoch(p['started_at']), target=probe_name(p['id']), phase=label,
+                                 interface=interface, ok=p['ok'], latency=p['latency_ms'], loaded=loaded,
+                                 elapsed_ms=p.get('elapsed_ms'), dispatch_delay_ms=p['dispatch_delay_ms'],round_started_at=round_at))
             stop.wait(max(0, min(deadline-time.monotonic(), 1-(time.monotonic()-tick))))
     return rows
 
@@ -112,12 +127,22 @@ def burst(c, data, reason='manual', stop=None):
     with exclusive(data, 'investigation.lock'):
         if paused(data): raise ValueError('Monitoring is paused')
         report = new('close-up', reason)
+        import diagnostics, host_metrics
+        sampler = host_metrics.Sampler()
+        report['path_context_before'] = diagnostics.path_context(sampler)
         before = m.diagnostics()
         report['points'] = capture(c, data, 60, 'observation', stop)
         after = m.diagnostics()
-        report['details'] = ['Nominal one-second rounds for 60 seconds; timeouts can reduce cadence. Three ICMP targets, no bandwidth load.',
+        report['path_context_after'] = diagnostics.path_context(sampler)
+        report['details'] = ['Nominal one-second rounds for 60 seconds; timeouts can reduce cadence. Router, public endpoints, loopback and configured satellites/peer; no bandwidth load.',
             'Successful replies define latency percentiles; misses remain counted. ICMP filtering and host scheduling can affect results.',
             'This is a recorded episode, not current health. It does not reconstruct time before the trigger.']
+        for name in ('before','after'):
+            wifi = report['path_context_'+name]['wifi']
+            report['details'].append('Wi-Fi '+name+': '+str(wifi.get('signal_noise','signal unavailable'))+
+                '; channel '+str(wifi.get('channel','unavailable'))+'; link rate '+str(wifi.get('rate_mbps','unavailable'))+
+                ' Mbps; BSSID '+str(wifi.get('bssid','unavailable'))+'. This is a point-in-time reading, not continuous association history.')
+        report['details'].append('Loopback stays within this Mac. Slow loopback, dispatch delay or process elapsed time can support host-side delay; clean loopback does not rule out Wi-Fi driver or radio issues. Satellite management replies do not measure backhaul throughput. Raw path_context_before/after include CPU, interface deltas and power settings.')
         if any(p.get('loaded') is True for p in report['points']):
             report['details'].append('A local load test overlapped this close-up; it may have affected responses.')
         if before.get('interface') != after.get('interface'):

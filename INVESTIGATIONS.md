@@ -1,4 +1,4 @@
-# Connection investigations — version 2.6.1
+# Connection investigations — version 2.7.1
 
 Open **Performance**, expand **Investigations and computer details**, then find **Connection investigation**. The panel names the observing Mini. Reports describe saved episodes, not current health. Whole home's panel uses this Mac's local report; choose an imported snapshot to inspect exported reports from the other Mini. Automatic sharing of investigation reports is not implemented.
 
@@ -71,8 +71,24 @@ These commands are read-only and never run a test:
 
 The versioned JSON schema is `network-monitor.investigation.v1`. Status and the ordinary query include the latest saved report of each of four types. History includes raw tool output. Names, local IPs and route hops are private operational evidence; do not commit them to Git or publish them automatically.
 
-Raw reports are `~/Library/Logs/NetworkMonitor/investigations-*.jsonl`, limited to four 2 MiB segments (8 MiB) with a 30-day age ceiling. Size can shorten retention. `investigation-latest.json` is a bounded summary cache (reader limit 512 KiB), excluding raw external-tool output. The dashboard export includes these recent summaries and close-up points; it does not export the full raw journal. Reports are not included in automatic peer synchronization in this version.
+Raw reports are `~/Library/Logs/NetworkMonitor/investigations-*.jsonl`, limited to eight 4 MiB segments (32 MiB) with a 30-day age ceiling. Size can shorten retention. `investigation-latest.json` is a bounded summary cache (reader limit 1 MiB), excluding raw external-tool output. The dashboard export includes these recent summaries and close-up points; it does not export the full raw journal. Reports are not included in automatic peer synchronization in this version.
 
-There is at most one investigation per Mac, at most three concurrent ping workers, and no new always-on probe stream or listener. An active capture briefly creates ping subprocesses; idle overhead is a small scheduling check and bounded report reads. Actual CPU/RAM depends on the Mac and is visible under Monitoring & storage. Stop monitoring cancels close-ups/route/iperf work through the pause marker; bounded subprocess deadlines also limit work. Delete history includes investigation journals/cache after work stops. No router credentials are used.
+There is at most one investigation per Mac, at most twelve concurrent ping workers, and no new always-on probe stream or listener. An active capture briefly creates ping subprocesses; idle overhead is a small scheduling check and bounded report reads. Actual CPU/RAM depends on the Mac and is visible under Monitoring & storage. Stop monitoring cancels close-ups/route/iperf work through the pause marker; bounded subprocess deadlines also limit work. Delete history includes investigation journals/cache after work stops. No router credentials are used.
 
 Design credits and upstream license references are in [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
+## Distinguish Mac delays from the wireless path
+
+Close-ups also ping `127.0.0.1` (local loopback), the configured other computer, and configured satellites in the same rounds. No new listener or throughput test is started. The path selector exposes each measured target. Loopback does not leave the Mac. Its latency, dispatch delay and subprocess elapsed time can reveal host-side stalls; a clean loopback cannot rule out the Wi-Fi driver, radio, interference, or access point. Satellite management replies can be filtered or deprioritized and do not establish backhaul performance.
+
+Raw point fields include `round_started_at`, `dispatch_delay_ms` and `elapsed_ms`. Dispatch delay measures when the worker began after the round began. Elapsed time includes utility startup, DNS if a peer hostname is used, OS scheduling, network wait and process completion; subtracting ping RTT does not isolate CPU delay. Timeouts remain misses, not zero latency. All targets in a round are close in time, not perfectly simultaneous.
+
+`path_context_before` and `path_context_after` retain dated Wi-Fi signal/noise, channel, negotiated transmit rate, BSSID if macOS exposes it, CPU/memory/interface deltas, and selected read-only power settings. CPU starts with a warm-up and then describes the interval between readings. Interface traffic includes LAN activity. A negotiated Wi-Fi rate is not measured internet throughput. Point-in-time context can miss a transient change.
+
+Compare the Wi-Fi reading's interface with the recorded default route. A wired observer may also have Wi-Fi associated; its radio reading does not describe the path used by its default-route probes.
+
+The recorder uses a signed CoreWLAN helper to read current link state without scans or configuration changes. It refreshes normally every 60 seconds, or after 30 seconds when the Orbi ping is slow; close-ups add before/after readings. The helper collects no SSID, password, keys, nearby-network list, or packet contents. Existing macOS privacy controls may withhold BSSID. No permission is bypassed or automatically expanded. If BSSID is unavailable, read the Orbi attachment page and record its observation time; do not infer a station from signal or channel alone.
+
+The helper uses Apple's [CoreWLAN interface API](https://developer.apple.com/documentation/corewlan/cwinterface), compiled locally during installation. It does not replace the recorder or add another login job.
+
+Read the latest Wi-Fi state and freshness with `network-monitor query`; read full close-up context with `network-monitor investigate history --limit 5`. Extra raw close-up context stays on its source Mac; summaries and points can be included in an explicit dashboard export. To compare the two machines, align their original timestamps and use their independent router/public measurements.

@@ -1273,7 +1273,7 @@ struct InvestigationPanel: View {
         let rows = report.groups.filter { $0.target == target }
         return VStack(alignment:.leading,spacing:12) {
             HStack {
-                Picker("Path",selection:$target) { ForEach(["Main Orbi","Cloudflare","Google"],id:\.self) { Text($0).tag($0) } }.frame(maxWidth:320)
+                Picker("Path",selection:$target) { ForEach(Array(Set(report.points.map(\.target))).sorted(),id:\.self) { Text($0).tag($0) } }.frame(maxWidth:320)
                 Spacer()
                 Toggle("15-second detail",isOn:$zoom).toggleStyle(.switch).controlSize(.small)
             }

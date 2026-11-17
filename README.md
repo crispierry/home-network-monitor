@@ -4,7 +4,7 @@ Network Monitor records evidence of intermittent home-network problems and displ
 
 The recorder continues working when the network fails or the dashboard is closed. Evidence stays on each Mac. No cloud account, router password, telemetry service, or paid subscription is required.
 
-**Release:** 2.7.0 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
+**Release:** 2.7.1 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
 
 This is a source release. You build the app locally; a notarized installer is not provided.
 
@@ -175,7 +175,7 @@ Retention ends when either the size or age limit is reached:
 | Speed tests | 8 MiB | 180 days |
 | Human observations | 4 MiB | 180 days |
 | Diagnostics | 32 MiB | 30 days |
-| Investigations | 8 MiB | 30 days |
+| Investigations | 32 MiB | 30 days |
 
 State, service errors, and optional summary caches add bounded overhead. Charts keep seven days of samples in memory; speed/observation caches keep up to 180 days. User exports, builds, Trash, and migration backups are outside automatic retention. See [ARCHITECTURE.md](ARCHITECTURE.md) for storage and failure handling.
 

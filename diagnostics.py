@@ -166,6 +166,18 @@ def ipv6_checks():
     return out
 
 
+def path_context(sampler):
+    at = m.stamp()
+    local = local_context()
+    power = run_command(['/usr/bin/pmset','-g','custom'],2,8192)
+    power['output'] = '\n'.join(line for line in power.get('output','').splitlines()
+        if re.match(r'^\s*(AC Power:|Battery Power:|sleep\s|displaysleep\s|powernap\s|tcpkeepalive\s|womp\s|lowpowermode\s)',line))
+    result = dict(at=at,wifi=m.wifi_snapshot(),network=m.diagnostics(),local=local,power=power,
+        host_metrics=sampler.sample(run_command,local['interface_counters'],m.stamp()))
+    result['finished_at'] = m.stamp()
+    return result
+
+
 def collect(c, trigger, trace=False, host_sampler=None):
     result = dict(type='diagnostic_snapshot', schema='network-monitor.diagnostics.v1',
         at=m.stamp(), trigger=trigger, host=m.identity(), gateway={}, notes=[

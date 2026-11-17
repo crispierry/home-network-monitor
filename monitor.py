@@ -24,7 +24,7 @@ import tempfile
 import time
 import uuid
 
-VERSION = '2.6.1'
+VERSION = '2.7.1'
 BASE = Path.home() / 'Library/Application Support/NetworkMonitor'
 DATA = Path.home() / 'Library/Logs/NetworkMonitor'
 DEFAULT = dict(interval_seconds=15, timeout_seconds=3, failure_threshold=2,
@@ -446,6 +446,16 @@ def diagnostics():
 
 
 def wifi_snapshot():
+    helper = BASE/'wifi-observer'
+    if helper.is_file() and not helper.is_symlink():
+        rc, out = command([str(helper)], 3, limit=8192)
+        try:
+            value = json.loads(out)
+            if rc == 0 and isinstance(value,dict) and value.get('source') == 'CoreWLAN':
+                return dict(value, at=stamp())
+        except (ValueError,TypeError):
+            pass
+        return dict(at=stamp(),status='unavailable',source='CoreWLAN',tool_exit=rc)
     rc, out = command(['/usr/sbin/system_profiler', 'SPAirPortDataType', '-json'], 10, limit=262144)
     result = dict(at=stamp(), status='unavailable', bssid='unavailable (not exposed without additional permissions)')
     try:
@@ -592,7 +602,8 @@ def run(c, data, once=False, enforce_host=True):
                 ok, value = completed_auxiliary(wifi_future, 'wifi', events)
                 wifi = value if ok else dict(at=stamp(), status='unavailable')
                 wifi_future = None
-            if wifi_future is None and (last_wifi == 0 or started-last_wifi >= 300):
+            slow = any(p['id']=='orbi_icmp' and p['ok'] and (p.get('latency_ms') or 0)>30 for p in sample['checks'])
+            if wifi_future is None and (last_wifi == 0 or started-last_wifi >= (30 if slow else 60)):
                 wifi_future = wifi_pool.submit(wifi_snapshot)
                 last_wifi = started
             sample['wifi'] = wifi

@@ -33,7 +33,7 @@ Raw logs remain on their source observer. Optional sharing transfers compact sum
 | Speed tests | 8 × 1 MiB |
 | Human observations | 4 × 1 MiB |
 | Diagnostics | 16 × 2 MiB |
-| Investigations | 4 × 2 MiB |
+| Investigations | 8 × 4 MiB |
 
 [Age limits](README.md#storage-and-retention) can shorten these size ceilings. Journals use writer locks, flush/fsync, bounded records and torn-tail recovery. Checkpoint writes use unique owner-only temporary files followed by atomic replacement. Configuration, cache and imported evidence have size/shape limits.
 

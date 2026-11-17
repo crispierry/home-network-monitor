@@ -377,6 +377,7 @@ struct PerformanceView: View {
     var recent: [SamplePoint] { store.samples.filter { $0.time >= store.reference-300 } }
     var body: some View {
         VStack(alignment:.leading,spacing:20) {
+            InternetIncidentPanel(store:store)
             Panel {
                 HStack(alignment:.top) {
                     VStack(alignment:.leading,spacing:8) {

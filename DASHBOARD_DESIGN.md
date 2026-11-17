@@ -4,7 +4,7 @@ Overview prioritizes how often each Mac lost internet access and when it happene
 
 A prominent Show selector switches between either Mini and Both Minis across all sections. The sidebar provides equivalent navigation. Two-observer setups initially show both; a single computer is a complete supported setup. Hide unconfigured peer/satellite lanes and comparison controls; retain failures for configured checks. Cross-observer views explicitly label source and age; a missing peer stays unknown. Incidents always includes the graphical internet timeline; the selected Mini also exposes its detailed path timeline.
 
-Performance separates latency/loss from bandwidth. Time selection, zoom/detail controls and sample inspection support granular investigation. Missing replies and observation gaps remain visible; percentiles describe successful replies and disclose counts. Speed-test intervals are marked because the measurement itself creates load.
+Performance starts with the same zoomable internet incident timeline for either Mini or Both Minis, filtered to the selected observers and history range. It separates latency/loss from bandwidth. Time selection, zoom/detail controls and sample inspection support granular investigation. Missing replies and observation gaps remain visible; percentiles describe successful replies and disclose counts. Speed-test intervals are marked because the measurement itself creates load.
 
 Devices use familiar icons plus names/status text. Attachment notes are dated inventory, not live association. Incidents show per-check first failure and recovery; detailed raw context is available on demand. Evidence and Monitoring & storage expose operational details without dominating the overview.
 

@@ -54,3 +54,13 @@ Findings fixed:
 Validation: 117 offline Python tests and native data tests pass. Added tests exercise real bidirectional TLS over socket pairs, reader/writer exclusion, interrupted cursor commits, generation replay, query windows, deduplication, malformed rows, independent pause states and native cache swaps. No network listener, speed test, router change or live-history deletion is needed for these tests. The native app builds and passes local code-signature verification.
 
 Deployment note: upgrade the summary worker and dashboard together on both Macs so readers and writers share the cache-lock protocol. This review changes source/build artifacts; it does not install the release on the running Minis. The existing monitoring settings, pairing, schedules and evidence remain intact. Raw diagnostics still stay on their source Mac; compact queries do not offer every field available in local raw history. An interrupted-publication rebuild cannot recreate raw records already removed by retention; the prior peer generation remains archived.
+
+## 2.7.0 incident visibility and observer selection
+
+The unified view had retained the incident list but omitted the graphical path timeline. Overview and Incidents now expose a shared, zoomable internet-access timeline with per-observer counts. A visible selector switches all content between either Mini and both. The individual Incidents view also retains the detailed path timeline.
+
+The interruption calculation intersects confirmed HTTPS failure episodes for the two independent destinations. Single-destination failures, isolated protocol failures, non-overlapping failures, unconfirmed samples and out-of-window recoveries do not qualify. Open recovery and observation-gap uncertainty are preserved. Counts describe retained per-observer episodes, not distinct household outages or continuous uptime. Raw incidents are unchanged and remain available for drill-down.
+
+Visual switching verification exposed repeated full-history filtering inside the older path Canvas drawing loop. Bounds and spans are now captured once per render rather than rescanned for every drawn segment. Latency chart captions explicitly disclose peak-preserving reduction; zoom still shows original measurements.
+
+Validation: 117 offline Python tests and native data tests pass, including new interruption timing and classification cases. The Apple Silicon app builds and passes local signature verification. Deployment preserves recorder settings, history, pairing and speed-test schedules; no bandwidth test or router change is part of this update.

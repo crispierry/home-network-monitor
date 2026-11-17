@@ -73,6 +73,43 @@ struct IncidentEvidence: Codable, Identifiable {
     }
 }
 
+struct InternetInterruption: Identifiable {
+    var incidentID: String
+    var start: Double
+    var recovery: Double?
+    var uncertain: Bool
+    var id: String { incidentID + String(start) }
+}
+
+func internetInterruptions(_ incidents: [IncidentEvidence], start: Double, end: Double) -> [InternetInterruption] {
+    var result: [InternetInterruption] = []
+    for incident in incidents where !incident.commissioning {
+        let cloudflare = incident.episodes.filter { $0.check == "cloudflare_https" && $0.confirmed != nil }
+        let google = incident.episodes.filter { $0.check == "google_https" && $0.confirmed != nil }
+        var intervals: [InternetInterruption] = []
+        for a in cloudflare {
+            for b in google {
+                let onset = max(a.start,b.start)
+                let finish = min(a.recovery ?? end,b.recovery ?? end)
+                guard onset < finish, max(a.confirmed!,b.confirmed!) <= finish, onset <= end, finish >= start else { continue }
+                let recovery = [a.recovery,b.recovery].compactMap { $0 }.min()
+                intervals.append(.init(incidentID:incident.id,start:onset,recovery:recovery,uncertain:incident.uncertain))
+            }
+        }
+        for interval in intervals.sorted(by: { $0.start < $1.start }) {
+            if let last = result.last, last.incidentID == interval.incidentID, interval.start <= (last.recovery ?? end) {
+                result[result.count-1].recovery = last.recovery == nil || interval.recovery == nil ? nil : max(last.recovery!,interval.recovery!)
+            } else { result.append(interval) }
+        }
+    }
+    return result.sorted { $0.start > $1.start }
+}
+
+func observerName(_ host: String) -> String {
+    let name = host.replacingOccurrences(of:".local",with:"")
+    return name == "Mini-One" ? "Mini-One" : name == "Mini-Two" ? "Mini-Two" : host
+}
+
 struct DeviceEvidence: Codable, Identifiable {
     var id: String
     var name: String

@@ -165,6 +165,22 @@ struct DashboardView: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:20) {
                     header
+                    if store.hasMultipleObservers && !store.useImported && store.section != "Monitoring & storage" {
+                        HStack {
+                            Text("Show").font(.callout.weight(.medium))
+                            Picker("Observation points",selection:$store.scope) {
+                                if observerName(store.live?.state.host ?? "") == "Mini-Two" {
+                                    Text(observerName(store.expectedPeer ?? "Other Mini")).tag("Other Mini")
+                                    Text("Mini-Two").tag("This Mini")
+                                } else {
+                                    Text(observerName(store.live?.state.host ?? "This Mini")).tag("This Mini")
+                                    Text(observerName(store.expectedPeer ?? "Other Mini")).tag("Other Mini")
+                                }
+                                Text("Both Minis").tag("Both Minis")
+                            }.labelsHidden().pickerStyle(.segmented).frame(maxWidth:480)
+                            Spacer(minLength:0)
+                        }.help("Choose one Mini or compare both. Applies to every chart and incident count below.")
+                    }
                     if store.fixture { Label("SYNTHETIC TEST EVIDENCE · not your live network",systemImage:"testtube.2").font(.headline).foregroundStyle(amber) }
                     if let error = store.error, !store.useImported && !store.selectedPeer {
                         Label("Cannot read current evidence: \(error)",systemImage:"exclamationmark.triangle.fill").foregroundStyle(coral).padding().frame(maxWidth:.infinity,alignment:.leading).background(coral.opacity(0.08),in:RoundedRectangle(cornerRadius:12))
@@ -247,6 +263,7 @@ struct OverviewView: View {
     var body: some View {
         VStack(spacing:20) {
             HealthPanel(store:store,state:state)
+            InternetIncidentPanel(store:store)
             HStack {
                 Label("\(state.devices?.count ?? 0) watched devices",systemImage:"house.fill").font(.callout.weight(.medium))
                 Text("Local device reachability").font(.system(size:13)).foregroundStyle(.secondary)
@@ -468,6 +485,7 @@ struct HealthPanel: View {
 
 struct ZoomableTimeChart<Marks: ChartContent>: View {
     let bounds: ClosedRange<Double>
+    var height: CGFloat = 220
     var emptyMessage: (ClosedRange<Double>)->String? = { _ in nil }
     let inspect: (Double, ClosedRange<Double>) -> String
     @ChartContentBuilder var marks: (ClosedRange<Double>) -> Marks
@@ -513,7 +531,7 @@ struct ZoomableTimeChart<Marks: ChartContent>: View {
                     }
                 }
             }
-            .frame(height:220)
+            .frame(height:height)
             if let message=emptyMessage(window) { Label(message,systemImage:"chart.xyaxis.line").font(.system(size:13)).foregroundStyle(.secondary) }
             Text(selected.map{inspect($0,window)} ?? "Drag across a time range to zoom. Click to inspect; use the buttons to zoom or move through time.")
                 .font(.system(size:13)).foregroundStyle(.secondary).frame(minHeight:34,alignment:.topLeading).fixedSize(horizontal:false,vertical:true)
@@ -614,7 +632,7 @@ struct LatencyPanel: View {
                 }
             }.chartForegroundStyleScale(range:[ocean,Color.indigo,Color.pink,Color.orange])
              .id("\(store.hours)-\(store.snapshot?.state.host ?? "")-\(store.useImported)-\(compare)")
-            Text("◆ Speed-test load · Close views show original samples, normally 15 seconds apart. Zoom adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            Text("◆ Speed-test load · Wide views preserve peaks, not averages. Zoom reveals original samples, normally 15 seconds apart; it adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
         }
     }
 }
@@ -642,6 +660,81 @@ struct SpeedPanel: View {
     }
 }
 
+struct InternetIncidentPanel: View {
+    @ObservedObject var store: DashboardStore
+    var snapshots: [DashboardSnapshot] { store.wholeHome ? store.homeSnapshots : [store.snapshot].compactMap { $0 } }
+    var hosts: [String] {
+        store.wholeHome ? Array(Set(snapshots.map { $0.state.host } + (store.expectedPeer.map { [$0] } ?? []))).sorted() : snapshots.map { $0.state.host }
+    }
+    func snapshot(_ host:String) -> DashboardSnapshot? { snapshots.first { $0.state.host == host } }
+    func interruptions(_ host:String) -> [InternetInterruption] {
+        internetInterruptions(snapshot(host)?.state.incidents ?? [],start:store.start,end:store.reference)
+    }
+    func inspect(_ time:Double, _ window:ClosedRange<Double>) -> String {
+        hosts.map { host in
+            let name=observerName(host)
+            if let event=interruptions(host).first(where: { $0.start <= time && ($0.recovery ?? store.reference) >= time }) {
+                return "\(name): confirmed interruption · \(localTime(event.start,seconds:true)) → \(event.recovery.map { localTime($0,seconds:true) } ?? "recovery not observed")\(event.uncertain ? " · monitoring gap; duration uncertain" : "")"
+            }
+            guard let s=snapshot(host), let point=inspectedSample(s.samples,at:time,window:window) else { return "\(name): no observation at this time" }
+            return "\(name): \(levelText(point.lanes[0])) · observed \(localTime(point.time,seconds:true))"
+        }.joined(separator:"\n")
+    }
+    var body: some View {
+        Panel {
+            HStack {
+                Label("Internet access · incident timeline",systemImage:"exclamationmark.bubble").font(.title3.weight(.semibold))
+                Spacer()
+                if store.section != "Incidents" { Button("Inspect incidents") { store.section="Incidents" }.buttonStyle(.borderless) }
+            }
+            Text("Confirmed interruptions require overlapping, confirmed failures to both public HTTPS destinations. One destination failing is mixed evidence; other failed checks are listed separately.")
+                .font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).padding(.top,6)
+            ForEach(hosts,id:\.self) { host in
+                HStack(alignment:.firstTextBaseline) {
+                    Label(observerName(host),systemImage:"macmini").font(.headline)
+                    Spacer()
+                    if let s=snapshot(host) {
+                        let events=interruptions(host)
+                        Text("\(events.count) confirmed interruption\(events.count == 1 ? "" : "s")").font(.headline).monospacedDigit()
+                        Text("\(elapsed(observedSeconds(samples:s.samples,start:store.start,end:store.reference))) observed").font(.system(size:13)).foregroundStyle(.secondary)
+                    } else { Text("No evidence received · health unknown").font(.callout).foregroundStyle(.secondary) }
+                }.padding(.top,12)
+            }
+            ZoomableTimeChart(bounds:store.start...store.reference,height:110,inspect:inspect) { window in
+                ForEach(hosts,id:\.self) { host in
+                    let spans=laneSpans(samples:snapshot(host)?.samples ?? [],start:window.lowerBound,end:window.upperBound).filter { $0.lane == laneNames[0] }
+                    ForEach(spans) { span in
+                        RectangleMark(xStart:.value("Start",Date(timeIntervalSince1970:span.start)),xEnd:.value("End",Date(timeIntervalSince1970:span.end)),y:.value("Mini",observerName(host)),height:.fixed(28))
+                            .foregroundStyle(by:.value("Internet checks",levelText(span.status)))
+                    }
+                    ForEach(interruptions(host).filter { $0.start <= window.upperBound && ($0.recovery ?? store.reference) >= window.lowerBound }) { event in
+                        PointMark(x:.value("Confirmed interruption",Date(timeIntervalSince1970:max(window.lowerBound,event.start))),y:.value("Mini",observerName(host)))
+                            .symbol(.cross).symbolSize(110).foregroundStyle(coral)
+                    }
+                }
+            }.chartForegroundStyleScale(domain:[levelText(2),levelText(1),levelText(0),levelText(-1)],range:[mint,amber,coral,Color.gray.opacity(0.35)])
+                .id("\(store.scope)-\(store.hours)-\(store.useImported)")
+            Text("✚ marks a confirmed interruption, including short events. Grey means no observation. Counts use retained incidents per Mini, not distinct house-wide outages. Times are sampled; monitoring gaps make continuity uncertain.")
+                .font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            if store.section == "Incidents" {
+                ForEach(hosts,id:\.self) { host in
+                    let events=interruptions(host)
+                    ForEach(events) { event in
+                        DisclosureGroup {
+                            Text(event.uncertain ? "A recording gap overlaps this incident; its continuous duration is unknown." : "Both destinations had overlapping confirmed failures. This does not identify the failing equipment.").font(.callout).foregroundStyle(.secondary)
+                            if let incident=snapshot(host)?.state.incidents.first(where: { $0.id == event.incidentID }) {
+                                IncidentCard(incident:incident,reference:store.reference).padding(.top,8)
+                            }
+                        } label: {
+                            Text("\(observerName(host)) · \(localTime(event.start,seconds:true)) → \(event.recovery.map { localTime($0,seconds:true) } ?? "recovery not observed")").font(.callout.weight(.medium))
+                        }.padding(.top,8)
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct TimelinePanel: View {
     @ObservedObject var store: DashboardStore
     @State var selected: Date?
@@ -650,6 +743,8 @@ struct TimelinePanel: View {
     var spans:[LaneSpan] { laneSpans(samples:store.samples,start:store.chartStart,end:store.chartEnd).filter { visibleLanes.contains($0.lane) } }
     var nearest: SamplePoint? { guard let selected=selected else{return nil}; return store.samples.first { $0.time<=selected.timeIntervalSince1970 && $0.time+$0.interval>selected.timeIntervalSince1970 } }
     var body: some View {
+        let lower=store.chartStart, upper=store.chartEnd
+        let timelineSpans=spans, notes=store.displayedNotes, lanes=visibleLanes
         Panel {
             HStack { Text("Where did the path break?").font(.headline); Spacer(); ForEach([-1,2,1,0],id:\.self) { status in HStack(spacing:4) { Circle().fill(levelColor(status)).frame(width:7,height:7); Text(levelText(status)).font(.system(size:13)).foregroundStyle(.secondary) } } }
             Text("Each lane answers a different question. Satellite and gateway checks measure management reachability.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,4)
@@ -660,29 +755,29 @@ struct TimelinePanel: View {
                 VStack(spacing:6) {
                     GeometryReader { geometry in
                         Canvas { context,size in
-                            let width=size.width, duration=store.chartEnd-store.chartStart
-                            for span in spans {
-                                let row=visibleLanes.firstIndex(of:span.lane) ?? 0
-                                let x=(span.start-store.chartStart)/duration*width
+                            let width=size.width, duration=upper-lower
+                            for span in timelineSpans {
+                                let row=lanes.firstIndex(of:span.lane) ?? 0
+                                let x=(span.start-lower)/duration*width
                                 let w=(span.end-span.start)/duration*width
                                 let rect=CGRect(x:x,y:Double(row)*26+6,width:max(0.5,w),height:14)
                                 context.fill(Path(rect),with:.color(levelColor(span.status).opacity(span.status == -1 ? 0.22:0.85)))
                             }
-                            for note in store.displayedNotes {
-                                let x=(note.time-store.chartStart)/duration*width
+                            for note in notes {
+                                let x=(note.time-lower)/duration*width
                                 var path=Path(); path.move(to:CGPoint(x:x,y:0)); path.addLine(to:CGPoint(x:x,y:size.height))
                                 context.stroke(path,with:.color(.purple),style:StrokeStyle(lineWidth:1,dash:[4,3]))
                             }
                             if let selected=selected {
-                                let x=(selected.timeIntervalSince1970-store.chartStart)/duration*width
+                                let x=(selected.timeIntervalSince1970-lower)/duration*width
                                 var path=Path(); path.move(to:CGPoint(x:x,y:0)); path.addLine(to:CGPoint(x:x,y:size.height))
                                 context.stroke(path,with:.color(.primary.opacity(0.5)),lineWidth:1)
                             }
                         }.contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance:0).onChanged { value in
-                            selected=Date(timeIntervalSince1970:store.chartStart+max(0,min(1,value.location.x/geometry.size.width))*(store.chartEnd-store.chartStart))
+                            selected=Date(timeIntervalSince1970:lower+max(0,min(1,value.location.x/geometry.size.width))*(upper-lower))
                         }).onContinuousHover { phase in
-                            if case .active(let point)=phase { selected=Date(timeIntervalSince1970:store.chartStart+max(0,min(1,point.x/geometry.size.width))*(store.chartEnd-store.chartStart)) }
+                            if case .active(let point)=phase { selected=Date(timeIntervalSince1970:lower+max(0,min(1,point.x/geometry.size.width))*(upper-lower)) }
                         }.accessibilityLabel("Path timeline. Click, drag or hover to inspect a time; passing, mixed, failing, and unknown are listed below.")
                     }.frame(height:CGFloat(visibleLanes.count)*26)
                     HStack { Text(Date(timeIntervalSince1970:store.chartStart),format:.dateTime.hour().minute()); Spacer(); Text(Date(timeIntervalSince1970:(store.chartStart+store.chartEnd)/2),format:.dateTime.hour().minute()); Spacer(); Text(Date(timeIntervalSince1970:store.chartEnd),format:.dateTime.hour().minute()) }.font(.system(size:13)).foregroundStyle(.secondary)
@@ -701,6 +796,8 @@ struct IncidentList: View {
     @ObservedObject var store: DashboardStore
     var body: some View {
         VStack(alignment:.leading,spacing:18) {
+            InternetIncidentPanel(store:store)
+            TimelinePanel(store:store)
             Panel { Text("Events, evidence, and your observations").font(.headline); Text("Two consecutive failed checks confirm an incident; two good samples confirm recovery. Times are first observations, not exact physical transitions. A single failed probe is retained in the raw evidence.").font(.callout).foregroundStyle(.secondary).padding(.top,7) }
             if store.displayedIncidents.isEmpty { Panel { Label("No confirmed incidents in this window",systemImage:"checkmark.circle").foregroundStyle(mint) } }
             ForEach(store.displayedIncidents) { incident in IncidentCard(incident:incident,reference:store.reference) }
@@ -978,7 +1075,10 @@ struct WholeHomeView: View {
                 Text("Observations keep their original timestamps").font(.system(size:13)).foregroundStyle(.secondary)
             }
             if store.section == "Devices" { devices }
-            else if store.section == "Incidents" { incidents }
+            else if store.section == "Incidents" {
+                InternetIncidentPanel(store:store)
+                incidents
+            }
             else if store.section == "Evidence" {
                 Panel {
                     Text("Two independent sources").font(.headline)
@@ -987,6 +1087,7 @@ struct WholeHomeView: View {
                     Text("Choose a Mini in the sidebar to inspect its detailed evidence. Controls apply only to this Mac.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,10)
                 }
             } else {
+                InternetIncidentPanel(store:store)
                 if store.section == "Performance" {
                     InvestigationPanel(store:store)
                     ForEach(hosts,id:\.self) { host in
@@ -1017,7 +1118,7 @@ struct WholeHomeView: View {
                     }
                 }
             }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).id(store.hours)
-            Text("◆ Speed-test load · Close views show original samples, normally 15 seconds apart. Zoom adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary)
+            Text("◆ Speed-test load · Wide views preserve peaks, not averages. Zoom reveals original samples, normally 15 seconds apart; it adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary)
         }
     }
     var loss: some View {

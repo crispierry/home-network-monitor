@@ -1,6 +1,8 @@
 # Dashboard design
 
-Overview answers: is evidence fresh, can this observer reach the internet, which paths differ, and when did symptoms begin? The default view is this observer, and a single computer is a complete supported setup. Hide unconfigured peer/satellite lanes and comparison controls until peer evidence exists; retain failures for configured checks. Cross-observer views explicitly label source and age; a missing peer stays unknown.
+Overview prioritizes how often each Mac lost internet access and when it happened. A zoomable internet timeline follows current health, with confirmed interruption counts per observer and explicit unknown recording time. Overlapping confirmed failures to both public HTTPS destinations qualify; isolated destination or other protocol failures remain available in incident details. Counts use retained incidents and are not distinct household-outage totals.
+
+A prominent Show selector switches between either Mini and Both Minis across all sections. The sidebar provides equivalent navigation. Two-observer setups initially show both; a single computer is a complete supported setup. Hide unconfigured peer/satellite lanes and comparison controls; retain failures for configured checks. Cross-observer views explicitly label source and age; a missing peer stays unknown. Incidents always includes the graphical internet timeline; the selected Mini also exposes its detailed path timeline.
 
 Performance separates latency/loss from bandwidth. Time selection, zoom/detail controls and sample inspection support granular investigation. Missing replies and observation gaps remain visible; percentiles describe successful replies and disclose counts. Speed-test intervals are marked because the measurement itself creates load.
 

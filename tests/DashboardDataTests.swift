@@ -25,6 +25,22 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
         try require(sharingStatus(state:"connected",updated:200,lastExchange:100,now:210).hasPrefix("Disconnected"),"Fresh worker cannot hide a stale exchange")
         try require(sharingStatus(state:"connected",updated:100,lastExchange:100,now:210) == "Sync worker not reporting","Dead worker cannot appear connected")
         let now=Date().timeIntervalSince1970
+        let overlap = IncidentEvidence(id:"overlap",start:now-120,recovery:now-30,uncertain:false,hypotheses:[],episodes:[
+            .init(check:"cloudflare_https",start:now-120,recovery:now-45,confirmed:now-105),
+            .init(check:"google_https",start:now-100,recovery:now-30,confirmed:now-85)])
+        let interrupted = internetInterruptions([overlap],start:now-90,end:now)
+        try require(interrupted.count == 1 && interrupted[0].start == now-100 && interrupted[0].recovery == now-45,"Internet interruption uses overlapping HTTPS episodes, retaining onset before window")
+        var separate = overlap; separate.episodes[1].start = now-40; separate.episodes[1].confirmed = now-35
+        try require(internetInterruptions([separate],start:now-200,end:now).isEmpty,"Different destinations failing at different times is not an internet interruption")
+        var single = overlap; single.episodes.removeLast()
+        try require(internetInterruptions([single],start:now-200,end:now).isEmpty,"One destination failing cannot count as lost internet access")
+        var unconfirmed = overlap; unconfirmed.episodes[1].confirmed = nil
+        try require(internetInterruptions([unconfirmed],start:now-200,end:now).isEmpty,"One failed sample cannot confirm an interruption")
+        var open = overlap; open.recovery = nil; open.uncertain = true
+        for i in open.episodes.indices { open.episodes[i].recovery = nil }
+        let ongoing = internetInterruptions([open],start:now-200,end:now)
+        try require(ongoing.count == 1 && ongoing[0].recovery == nil && ongoing[0].uncertain,"Open interruptions preserve unknown recovery and monitoring gaps")
+        try require(internetInterruptions([overlap],start:now-20,end:now).isEmpty,"Recovered interruptions outside the window are excluded")
         var changedPath = point(now-15,500); changedPath.interface = "en1"
         let callSamples = [point(now-400,999),point(now-120,10),point(now-105,20),point(now-90,nil),point(now-75,100),point(now-30,300),changedPath]
         let call = recentPathMetrics(callSamples,key:\.google,end:now)

@@ -4,7 +4,7 @@ Network Monitor records evidence of intermittent home-network problems and displ
 
 The recorder continues working when the network fails or the dashboard is closed. Evidence stays on each Mac. No cloud account, router password, telemetry service, or paid subscription is required.
 
-**Release:** 2.6.1 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
+**Release:** 2.7.0 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
 
 This is a source release. You build the app locally; a notarized installer is not provided.
 
@@ -20,6 +20,16 @@ This is a source release. You build the app locally; a notarized installer is no
 | What else was happening? | Observer CPU/memory/interface context, supported gateway status pages, and bounded diagnostic captures |
 
 A successful check proves only what it tested. Device replies do not prove camera video or voice-assistant cloud access works. Clean public probes cannot rule out a problem on another computer or on Zoom's actual media path.
+
+## Find internet interruptions
+
+The **Overview** starts with an **Internet access · incident timeline**. It is also at the top of **Incidents** and in the whole-home **Performance** view. Use the **Show** selector above the content to choose Mini-One, Mini-Two, or Both Minis. The sidebar provides the same choices. Selection changes the charts and counts; it does not change recording.
+
+Each timeline row shows sampled HTTPS reachability from that Mac: passing, mixed, failing, or no evidence. Crosses mark confirmed interruptions, so short events remain visible in a full-day view. Drag horizontally to zoom, click to inspect, or use the zoom and time-navigation buttons. **Incidents** provides expandable timing and evidence; an individual Mini also has the detailed path timeline.
+
+An interruption count requires overlapping confirmed failures to **both** public HTTPS destinations. An isolated ping, DNS, satellite, or single-destination failure remains in the detailed incident list without being counted as lost internet access. Counts are per observer and use retained incident history; do not add the two counts to estimate distinct household outages. Missing recording time remains unknown, and a recording gap makes continuity and duration uncertain. The timeline is evidence from the monitoring Macs, not proof of another device's cloud connectivity or the physical cause.
+
+Wide latency charts preserve peaks instead of drawing averages. Zoom in for individual measurements; use the performance statistics to distinguish typical latency from occasional spikes.
 
 ## One computer is enough
 

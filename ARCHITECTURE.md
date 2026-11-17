@@ -20,7 +20,9 @@ The recorder is authoritative; the dashboard and optional synchronization worker
 
 The recorder writes locally even when network checks fail. The dashboard loads files off the main thread; incremental offsets avoid rereading the full journal on every refresh. Rotation removes old offsets, and explicit gaps prevent charts from implying continuous coverage.
 
-Raw logs remain on their source observer. Optional sharing transfers compact summaries; a failed transfer preserves the last valid cache. The time the peer observed a result is distinct from the time that result arrived. The transport supports only the [documented two-observer profile](SYNC_SETUP.md); general discovery and automatic pairing are not implemented.
+Publishing uses a private pending marker before appending compact records. If a process exits before committing its cursor, the next publication rebuilds compact summaries from retained raw journals in a new recording generation. The peer preserves its previous generation separately. This avoids counting replayed appends twice; a rebuild cannot recover raw history that retention has already removed.
+
+Raw logs remain on their source observer. Optional sharing transfers compact summaries; a failed transfer preserves the last valid cache. The time the peer observed a result is distinct from the time that result arrived. Cache swaps hold an exclusive file lock; native readers use a nonblocking shared lock and keep the last complete snapshot during a transfer. Agent queries hold a shared lock while reading the selected cache generation. A corrupt or unavailable peer cache does not prevent returning local evidence. The transport supports only the [documented two-observer profile](SYNC_SETUP.md); general discovery and automatic pairing are not implemented.
 
 ## Bounds and failure isolation
 

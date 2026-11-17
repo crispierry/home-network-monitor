@@ -58,7 +58,8 @@ import Darwin
     var samples: [SamplePoint] { snapshot?.samples.filter { $0.time + $0.interval >= start && $0.time <= reference } ?? [] }
     var chartStart: Double { max(start, min(samples.first?.time ?? start, snapshot?.speeds.first(where: { $0.time >= start })?.time ?? reference)) }
     var chartEnd: Double { max(chartStart + 60, reference) }
-    var currentStale: Bool { snapshot?.state.stale(at: reference) ?? true }
+    var observationPaused: Bool { observationIsPaused(snapshot?.state, local:isLocal, localPaused:paused) }
+    var currentStale: Bool { observationPaused || (snapshot?.state.stale(at: reference) ?? true) }
     var displayedIncidents: [IncidentEvidence] { snapshot?.state.incidents.filter { ($0.recovery ?? reference) >= start && $0.start <= reference } ?? [] }
     var displayedNotes: [UserObservation] { snapshot?.notes.filter { $0.time >= start && $0.time <= reference } ?? [] }
     var latestSpeed: SpeedPoint? { snapshot?.speeds.last { $0.status == "success" } }
@@ -258,22 +259,5 @@ import Darwin
                 DispatchQueue.main.async { self.speedRunning = false; self.message = output; self.refresh() }
             } catch { DispatchQueue.main.async { self.speedRunning = false; self.message = "Test could not start: \(error.localizedDescription)" } }
         }
-    }
-}
-
-
-final class PeerEvidenceReader: @unchecked Sendable {
-    private var reader: EvidenceReader?
-    private var generation: String?
-    func reset() { reader = nil; generation = nil }
-    func update(root: URL) throws -> DashboardSnapshot? {
-        let data = try Data(contentsOf:root.appendingPathComponent("peer/current.json"))
-        guard let pointer = try JSONSerialization.jsonObject(with:data) as? [String:Any],
-              let directory = pointer["directory"] as? String, ["slot-a","slot-b"].contains(directory) else { return nil }
-        let path = root.appendingPathComponent("peer/"+directory)
-        let next = pointer["generation"] as? String
-        if reader == nil || generation != next { reader = EvidenceReader(root:path); generation = next }
-        reader?.root = path
-        return try reader?.update()
     }
 }

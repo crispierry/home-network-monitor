@@ -35,3 +35,22 @@ Light-mode colors are implemented with native appearance-aware values; this revi
 The default configuration now omits the optional peer probe. Explicit peer settings survive upgrades. Single-observer regression coverage checks healthy operation, internet failure/recovery, local agent queries, invalid peer values, and preservation of an existing peer. Native tests verify that unconfigured peer/satellite lanes are hidden while configured failing paths remain visible.
 
 Validation: 110 offline Python tests and the native data tests pass. The native app builds and passes local signature verification. An isolated single-computer fixture displayed 14/14 passing checks, no peer comparison controls, and only the four configured core timeline lanes. Existing live configurations were not switched to single-computer mode.
+
+## 2.6.3 cross-observer integration review
+
+Reviewed publication/cursor commits, mutual TLS push/pull, generation changes, cache rotation, native incremental reads, agent query semantics, freshness and ownership of monitoring controls.
+
+Findings fixed:
+
+- Cache rotation could remove a directory while a query or dashboard was reading it. Transfers now hold an exclusive cache lock. Queries use a shared lock; the dashboard keeps its previous complete snapshot during a transfer without blocking the UI.
+- A process exit after compact journal append but before cursor commit could replay records. A pending-publication marker now triggers a rebuild from retained raw journals in a new generation. Queries also deduplicate observation timestamps before computing attempts and coverage.
+- Replay protection covered sequence numbers within one generation but allowed a retired generation to replace the current one. Transfers now reject older publication times and the archived retired generation.
+- Peer queries ignored the requested window for speeds, incidents and notes, omitted an open incident, and exposed different primary history keys from local queries. Peer results now provide windowed `incidents`, `speed_tests` and `coverage`, while retaining the previous aliases for compatibility.
+- A missing/corrupt peer cache or unreadable sync status could prevent returning a useful local briefing. Peer failures are now isolated and explicitly reported.
+- Local pause/error state could incorrectly mark a selected peer as stopped or unreadable. Status now follows the selected observer; peer resume guidance points to that Mac.
+- Malformed local journal objects could crash publication. They are skipped before compact export, and outgoing records are validated before append. Device/note timestamps and peer slot symlinks have additional validation.
+- The summary-worker installer always claimed sharing was disabled. It now reports the preserved enabled setting accurately.
+
+Validation: 117 offline Python tests and native data tests pass. Added tests exercise real bidirectional TLS over socket pairs, reader/writer exclusion, interrupted cursor commits, generation replay, query windows, deduplication, malformed rows, independent pause states and native cache swaps. No network listener, speed test, router change or live-history deletion is needed for these tests. The native app builds and passes local code-signature verification.
+
+Deployment note: upgrade the summary worker and dashboard together on both Macs so readers and writers share the cache-lock protocol. This review changes source/build artifacts; it does not install the release on the running Minis. The existing monitoring settings, pairing, schedules and evidence remain intact. Raw diagnostics still stay on their source Mac; compact queries do not offer every field available in local raw history. An interrupted-publication rebuild cannot recreate raw records already removed by retention; the prior peer generation remains archived.

@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+import threading
+from unittest.mock import patch
 
 import monitor as m
 import sync
@@ -95,6 +97,94 @@ class ExchangeTests(unittest.TestCase):
         sync.publish(self.data,self.source,host='Mini-One',now=self.now+2)
         self.transfer()
         self.assertEqual(list(self.current().glob('samples-*.jsonl')),[])
+    def test_interrupted_publication_rebuilds_without_duplicate_history(self):
+        original=sync.save
+        def fail_cursor(path,value):
+            if path.name=='cursor.json': raise OSError('simulated crash before cursor commit')
+            return original(path,value)
+        newer=copy.deepcopy(self.sample); newer['started_at']=m.stamp(self.now+1)
+        m.journals(self.data)[0].append(newer)
+        with patch.object(sync,'save',side_effect=fail_cursor):
+            with self.assertRaises(OSError): sync.publish(self.data,self.source,host='Mini-One',now=self.now+2)
+        self.assertTrue((self.source/'publish-pending.json').exists())
+        sync.publish(self.data,self.source,host='Mini-One',now=self.now+3)
+        self.assertFalse((self.source/'publish-pending.json').exists())
+        rows=[json.loads(line) for p in (self.source/'outbox').glob('samples-*.jsonl') for line in p.read_text().splitlines()]
+        self.assertEqual(len(rows),2)
+        self.assertEqual(len({row['time'] for row in rows}),2)
+
+    def test_retired_generation_cannot_replace_current_cache(self):
+        self.transfer(); original=copy.deepcopy(self.manifest)
+        sync.save(self.source/'generation.json',{'id':'b'*32})
+        sync.publish(self.data,self.source,host='Mini-One',now=self.now+2); self.transfer()
+        pointer=sync.read(self.peer/'current.json')
+        sync.save(self.source/'outbox/manifest.json',original)
+        with self.assertRaisesRegex(ValueError,'generation replay'): self.transfer()
+        self.assertEqual(sync.read(self.peer/'current.json'),pointer)
+
+    def test_cache_swap_waits_for_snapshot_reader(self):
+        self.transfer()
+        sync.publish(self.data,self.source,host='Mini-One',now=self.now+2)
+        started=threading.Event(); finished=threading.Event(); errors=[]
+        def writer():
+            started.set()
+            try: self.transfer()
+            except Exception as error: errors.append(error)
+            finally: finished.set()
+        with sync.cache_lock(self.peer,shared=True):
+            before=self.current()
+            worker=threading.Thread(target=writer); worker.start()
+            self.assertTrue(started.wait(1)); self.assertFalse(finished.wait(.05))
+            self.assertEqual(self.current(),before); self.assertTrue(before.exists())
+        worker.join(2)
+        self.assertTrue(finished.is_set()); self.assertFalse(errors)
+
+    def test_peer_query_filters_window_deduplicates_and_keeps_open_incident(self):
+        import agent_query
+        m.journals(self.data)[0].append(self.sample)
+        sync.publish(self.data,self.source,host='Mini-One',now=self.now+2)
+        self.transfer()
+        root=self.root/'consumer'; root.mkdir()
+        self.peer.rename(root/'peer')
+        sync.save(root/'config.json',{'peer_id':self.manifest['host_id'],'peer_host':'Mini-One'})
+        cache=sync.current_peer(root)
+        speed=[{'started_at':m.stamp(self.now-7200),'status':'success','download_mbps':100},
+               {'started_at':m.stamp(self.now-60),'status':'success','download_mbps':200}]
+        path=cache/'performance-00000000000000000001-aaaaaaaa.jsonl'
+        path.write_text(''.join(json.dumps(x)+'\n' for x in speed))
+        state=sync.read(cache/'state.json')
+        state['incident']={'id':'active','started_at':m.stamp(self.now-30),'episodes':[],'hypotheses':[]}
+        state['recent_incidents']=[{'id':'old','started_at':m.stamp(self.now-8000),'recovered_at':m.stamp(self.now-7200),'episodes':[],'hypotheses':[]}]
+        sync.save(cache/'state.json',state)
+        q=sync.peer_briefing(root,1,self.now+3)
+        self.assertEqual(q['window']['hours'],1)
+        self.assertEqual(len(q['speed_tests']),1)
+        self.assertEqual([i['id'] for i in q['incidents']],['active'])
+        self.assertEqual(q['observed_samples'],1)
+        self.assertEqual(q['public_ping_attempts'],2)
+        self.assertLessEqual(q['coverage_seconds'],15)
+        with patch.object(agent_query,'briefing',return_value={'local':'still readable'}):
+            sync.save(cache/'manifest.json',{'malformed':True})
+            q=sync.all_hosts(self.data,root,1)
+        self.assertIsNone(q['peer']); self.assertIn('peer_error',q)
+        self.assertEqual(q['local'],{'local':'still readable'})
+
+    def test_malformed_local_rows_do_not_poison_publication(self):
+        path=next(self.data.glob('samples-*.jsonl'))
+        with path.open('a') as handle: handle.write('[]\n')
+        sync.publish(self.data,self.source,host='Mini-One',now=self.now+2)
+        self.transfer()
+        self.assertFalse((self.source/'publish-pending.json').exists())
+        rows=[line for p in self.current().glob('samples-*.jsonl') for line in p.read_text().splitlines()]
+        self.assertEqual(len(rows),1)
+
+    def test_single_observer_query_does_not_create_sync_state(self):
+        import agent_query
+        root=self.root/'unused-sync'
+        with patch.object(agent_query,'briefing',return_value={'host':'local'}):
+            result=sync.all_hosts(self.data,root,1)
+        self.assertIsNone(result['peer']); self.assertFalse(root.exists())
+
     def test_invalid_record_times_and_limits(self):
         row=sync.compact_sample(self.sample); row['time']=float('inf')
         with self.assertRaises(ValueError): sync.validate_records('samples-x',json.dumps(row).encode()+b'\n',self.now)

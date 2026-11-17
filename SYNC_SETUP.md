@@ -14,7 +14,7 @@ Use the same stable Python interpreter as the recorder. From the matching releas
 python3 scripts/install_sync.py
 ```
 
-For an upgrade, update the recorder and dashboard using [DEPLOYMENT.md](DEPLOYMENT.md), then rerun this summary-worker installer. Installing the worker alone does not pair or enable cross-Mac transfer.
+For an upgrade, update the recorder and dashboard using [DEPLOYMENT.md](DEPLOYMENT.md), then rerun this summary-worker installer on both Macs. Preserve the existing `Sync` directory: it holds pairing and the enabled setting. A dashboard upgrade alone cannot update the background worker; the 2.6.3 reader requires the matching worker’s cache lock before reading newly synchronized data. Installing the worker alone does not pair or enable cross-Mac transfer.
 
 The worker is a per-user LaunchAgent named `com.crispierry.network-monitor.sync`. It runs independently of the dashboard after the existing macOS user session starts. Headless means no attached display; it does not remove macOS login/FileVault requirements after reboot. This installer does not change automatic login, FileVault or account passwords.
 
@@ -40,7 +40,7 @@ For a configured peer, the native app opens **Whole home** by default. Both expe
 
 ## Storage, deletion and recovery
 
-Each source keeps its authoritative raw journals in `~/Library/Logs/NetworkMonitor/`. Compact exports live under `Sync/outbox/`, validated peer snapshots under `Sync/peer/`. Transfer uses manifest-declared journal prefixes with byte counts and SHA-256 checksums. Cached prefixes are reused and only new tail bytes cross the network; a fully validated generation is selected atomically. A failed, corrupt, incomplete or replayed transfer preserves the previous good cache. Retention gaps stay gaps.
+Each source keeps its authoritative raw journals in `~/Library/Logs/NetworkMonitor/`. Compact exports live under `Sync/outbox/`, validated peer snapshots under `Sync/peer/`. Transfer uses manifest-declared journal prefixes with byte counts and SHA-256 checksums. Cached prefixes are reused and only new tail bytes cross the network; a fully validated generation is selected atomically. A failed, corrupt, incomplete or replayed transfer preserves the previous good cache. Readers and cache swaps coordinate through a file lock so a reader cannot combine files from different publications. Older publication times and the retired recording generation cannot replace the current cache. Retention gaps stay gaps.
 
 Compact exports are limited to less than **16 MiB**, targeting seven days of samples and 180 days of speeds/notes. Byte caps can shorten retention. The peer cache, transfer staging and one prior recording generation are limited to less than **64 MiB** in aggregate. Raw journal budgets total 324 MiB plus state and bounded service errors; see the [retention table](README.md#storage-and-retention). The 512 MiB per-Mac design envelope includes operational reserve; user exports, source/build files, Trash and pre-existing checkpoint archives are outside it. The app reports measured local evidence and Sync allocation. This release does not create 30-day rollups; incident summaries retain the latest 20 incidents and raw diagnostic history remains on its source Mac.
 

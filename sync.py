@@ -1,4 +1,5 @@
 import argparse
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
@@ -45,6 +46,20 @@ def optional(path, default=None):
         return {} if default is None else default
 
 
+@contextmanager
+def cache_lock(destination, shared=False):
+    if shared and not destination.exists():
+        yield
+        return
+    if not shared: destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if destination.is_symlink(): raise ValueError('Cache directory symlink refused')
+    flags=os.O_RDONLY if shared else os.O_CREAT | os.O_RDWR
+    fd=os.open(destination/'cache.lock', flags | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd,'r' if shared else 'a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
+        yield
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -79,6 +94,11 @@ def tree_bytes(root):
 
 
 def publish(data=m.DATA, root=ROOT, host=None, now=None):
+    with cache_lock(root/'outbox'):
+        return _publish(data, root, host, now)
+
+
+def _publish(data, root, host, now):
     now=time.time() if now is None else now
     root.mkdir(parents=True,exist_ok=True,mode=0o700)
     identity=optional(root/'identity.json')
@@ -92,6 +112,9 @@ def publish(data=m.DATA, root=ROOT, host=None, now=None):
     out=root/'outbox'; out.mkdir(exist_ok=True,mode=0o700)
     cursor=optional(root/'cursor.json')
 
+    pending=root/'publish-pending.json'
+    if pending.exists():
+        save(root/'generation.json', {'id':uuid.uuid4().hex})
     generation=optional(root/'generation.json')
     if not generation:
         generation={'id':uuid.uuid4().hex}; save(root/'generation.json',generation)
@@ -99,6 +122,7 @@ def publish(data=m.DATA, root=ROOT, host=None, now=None):
         for p in out.iterdir():
             if p.is_file() and (NAME.fullmatch(p.name) or p.name=='manifest.json'): p.unlink()
         cursor={'generation':generation['id'],'offsets':{},'sequence':0}
+    save(pending, {'generation':generation['id']})
     journals={'samples':m.Journal(out,'samples',512*1024,24,7),
               'performance':m.Journal(out,'performance',256*1024,4,180),
               'observations':m.Journal(out,'observations',256*1024,4,180)}
@@ -120,9 +144,11 @@ def publish(data=m.DATA, root=ROOT, host=None, now=None):
                     old+=len(line)
                     try:
                         row=json.loads(line)
+                        if not isinstance(row,dict): raise ValueError('Expected a journal object')
                         at=row.get('recorded') if kind=='observations' else m.epoch(row['started_at'])
                         if at<now-(7 if kind=='samples' else 180)*86400: continue
                         result=compact_sample(row) if kind=='samples' else compact_speed(row) if kind=='performance' else row
+                        validate_records(kind+'-local', json.dumps(result,allow_nan=False).encode()+b'\n', now)
                         journals[kind].append(result,now)
                     except (ValueError,KeyError,TypeError):
                         continue
@@ -144,6 +170,7 @@ def publish(data=m.DATA, root=ROOT, host=None, now=None):
         raise ValueError('Export budget exceeded')
     save(out/'manifest.json',manifest)
     save(root/'cursor.json',cursor)
+    pending.unlink()
     return manifest
 
 
@@ -162,7 +189,7 @@ def _validate_manifest(value, peer_id, peer_host, now=None):
     if not ID.fullmatch(value.get('generation','')) or type(value.get('sequence')) is not int or value['sequence']<1:
         raise ValueError('Invalid generation/sequence')
     published=value.get('published_at')
-    if type(published) not in (int,float) or not math.isfinite(published) or published>now+5:
+    if type(published) not in (int,float) or not math.isfinite(published) or not 0<=published<=now+5:
         raise ValueError('Invalid/future publication time')
     state=value.get('state',{})
     if state.get('host',{}).get('hostname','').removesuffix('.local')!=peer_host or not isinstance(state.get('checks'),dict) or not 1<=len(state['checks'])<=100:
@@ -176,8 +203,12 @@ def _validate_manifest(value, peer_id, peer_host, now=None):
         latency=latest.get('latency_ms')
         if latency is not None and (type(latency) not in (int,float) or not math.isfinite(latency) or latency<0):
             raise ValueError('Invalid check latency')
-        if m.epoch(latest['started_at'])>now+5: raise ValueError('Future check')
-    if m.epoch(state['last_completed_at'])>now+5: raise ValueError('Future observations')
+        if not 0<=m.epoch(latest['started_at'])<=now+5: raise ValueError('Invalid check time')
+    if not 0<=m.epoch(state['last_completed_at'])<=now+5: raise ValueError('Invalid observation time')
+    devices=state.get('devices',[])
+    if not isinstance(devices,list) or len(devices)>12: raise ValueError('Invalid device inventory')
+    for device in devices:
+        if not isinstance(device,dict) or not 0<=m.epoch(device['observed_at'])<=now+5: raise ValueError('Invalid device observation')
     files=value.get('files')
     if not isinstance(files,list) or len(files)>64: raise ValueError('Invalid file count')
     seen=set(); total=0
@@ -220,12 +251,18 @@ def _validate_records(name, payload, now):
                 raise ValueError('Invalid speed interval')
         else:
             at=row['time']
+            if type(row.get('recorded')) not in (int,float) or not math.isfinite(row['recorded']) or not 0<=row['recorded']<=now+5: raise ValueError('Invalid note recording time')
+            if not isinstance(row.get('host'),str): raise ValueError('Invalid note host')
             if not isinstance(row.get('note',''),str) or len(row.get('note',''))>2000: raise ValueError('Oversized note')
         if type(at) not in (int,float) or not math.isfinite(at) or at>now+5 or at<0: raise ValueError('Invalid record time')
 
 
 def transfer(source, destination, peer_id, peer_host, now=None):
+    with cache_lock(destination):
+        return _transfer(source, destination, peer_id, peer_host, now)
 
+
+def _transfer(source, destination, peer_id, peer_host, now=None):
 
     now=time.time() if now is None else now
     manifest=read(source/'manifest.json'); validate_manifest(manifest,peer_id,peer_host,now)
@@ -236,6 +273,9 @@ def transfer(source, destination, peer_id, peer_host, now=None):
     old=destination/old_pointer.get('directory','missing')
     if old.is_symlink(): raise ValueError('Cache slot symlink refused')
     prior=optional(old/'manifest.json') if old_pointer else {}
+    retired=optional(destination/'previous-generation/manifest.json')
+    if prior and (manifest['published_at']<prior['published_at'] or (manifest['generation']!=prior['generation'] and manifest['generation']==retired.get('generation'))):
+        raise ValueError('Retired generation replay refused')
     if prior and prior['generation']==manifest['generation'] and manifest['sequence']<prior['sequence']:
         raise ValueError('Replay refused')
     if prior and prior['generation']==manifest['generation'] and manifest['sequence']==prior['sequence']:
@@ -286,41 +326,69 @@ def transfer(source, destination, peer_id, peer_host, now=None):
 def current_peer(root=ROOT):
     pointer=optional(root/'peer/current.json')
     if pointer.get('directory') not in ('slot-a','slot-b'): return None
-    return root/'peer'/pointer['directory']
+    path=root/'peer'/pointer['directory']
+    if path.is_symlink(): raise ValueError('Peer slot symlink refused')
+    return path
 
 
 def all_hosts(data=m.DATA, root=ROOT, hours=24):
     import agent_query
     now=time.time()
     local=agent_query.briefing(data,hours=hours)
-    peer=current_peer(root)
     result=dict(schema='network-monitor.home.v1',generated_at=m.stamp(now),
-                local=local,peer=None,sync=optional(root/'status.json'),
+                local=local,peer=None,sync={},
                 limitations=['Peer is a local validated cache. Sync failure is not proof of an internet failure.',
                              'Raw peer diagnostics remain on the source Mac. Speed tests are staggered, not simultaneous.'])
-    if peer:
-        brief=agent_query.briefing(peer,include_history=False,now=now)
-        brief['limitations']=[x for x in brief['limitations'] if 'not automatically synchronized' not in x]
-        samples=[]; speeds=[]
-        for path in sorted(peer.glob('samples-*.jsonl')):
-            for line in path.read_text().splitlines():
-                row=json.loads(line)
-                if now-hours*3600<=row['time']<=now: samples.append(row)
-        for path in sorted(peer.glob('performance-*.jsonl')):
-            speeds.extend(json.loads(x) for x in path.read_text().splitlines())
-        samples.sort(key=lambda x:x['time']); covered=0; end=now-hours*3600
-        for row in samples:
-            a=max(end,row['time']); b=min(now,row['time']+row['interval']); covered+=max(0,b-a); end=max(end,b)
-        notes=[]
-        for path in sorted(peer.glob('observations-*.jsonl')):
-            notes.extend(json.loads(x) for x in path.read_text().splitlines())
-        brief.update(reported_symptoms=sorted(notes,key=lambda x:x['time'])[-100:],source='validated_peer_cache',received_at=optional(root/'peer/current.json').get('received_at'),
-            coverage_seconds=covered,observed_samples=len(samples),
-            public_ping_attempts=sum(x['pingTotal'] for x in samples),public_ping_failures=sum(x['pingFailed'] for x in samples),
-            recent_incidents=optional(peer/'state.json').get('recent_incidents',[]),
-            speeds=sorted(speeds,key=lambda x:x['started_at'])[-100:])
-        result['peer']=brief
+    try:
+        result['sync']=optional(root/'status.json')
+    except (OSError,ValueError):
+        result['sync']={'state':'unavailable','error':'Sync status unreadable'}
+    try:
+        with cache_lock(root/'peer', shared=True):
+            result['peer']=peer_briefing(root, hours, now)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        result['peer_error']='Peer cache unavailable; local evidence is still available'
     return result
+
+
+def peer_briefing(root, hours, now):
+    import agent_query
+    peer=current_peer(root)
+    if not peer: return None
+    hours=max(1,min(168,hours)); start=now-hours*3600
+    config=read(root/'config.json')
+    manifest=read(peer/'manifest.json')
+    validate_manifest(manifest,config['peer_id'],config['peer_host'],now)
+    brief=agent_query.briefing(peer,include_history=False,now=now)
+    samples={}; speeds={}; notes={}
+    for kind, target in (('samples',samples),('performance',speeds),('observations',notes)):
+        for path in sorted(peer.glob(kind+'-*.jsonl')):
+            if path.is_symlink(): raise ValueError('Peer journal symlink refused')
+            payload=path.read_bytes()
+            if len(payload)>MAX_FILE: raise ValueError('Oversized peer journal')
+            validate_records(path.name,payload,now)
+            for line in payload.splitlines():
+                row=json.loads(line)
+                at=m.epoch(row['started_at']) if kind=='performance' else row['time']
+                if start<=at<=now:
+                    key=(row['recorded'],row.get('host'),at) if kind=='observations' else at
+                    target[key]=row
+    samples=sorted(samples.values(),key=lambda x:x['time']); covered=0; end=start
+    for row in samples:
+        a=max(end,row['time']); b=min(now,row['time']+row['interval']); covered+=max(0,b-a); end=max(end,b)
+    state=read(peer/'state.json')
+    incidents=state.get('recent_incidents',[])+([state['incident']] if state.get('incident') else [])
+    incidents=[x for x in incidents if m.epoch(x['started_at'])<=now and (not x.get('recovered_at') or m.epoch(x['recovered_at'])>=start)]
+    speed_rows=sorted(speeds.values(),key=lambda x:x['started_at'])[-100:]
+    brief.update(window=dict(start=m.stamp(start),end=m.stamp(now),hours=hours),
+        reported_symptoms=sorted(notes.values(),key=lambda x:x['time'])[-100:],
+        source='validated_peer_cache',received_at=optional(root/'peer/current.json').get('received_at'),
+        coverage=dict(observed_seconds=covered,window_seconds=hours*3600,sample_count=len(samples),note='Cadence-sized sampled intervals; gaps excluded. Not continuous uptime.'),
+        coverage_seconds=covered,observed_samples=len(samples),
+        public_ping_attempts=sum(x['pingTotal'] for x in samples),public_ping_failures=sum(x['pingFailed'] for x in samples),
+        incidents=incidents,recent_incidents=incidents,speed_tests=speed_rows,speeds=speed_rows,
+        history_limits='Peer cache contains compact samples, latest 20 completed incidents plus any open incident, and up to 100 speed tests and symptom notes in the requested window. Raw peer diagnostic journals stay on the source Mac.')
+    return brief
 
 
 def exchange(root):

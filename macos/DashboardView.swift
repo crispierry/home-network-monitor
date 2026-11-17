@@ -166,14 +166,14 @@ struct DashboardView: View {
                 VStack(alignment:.leading,spacing:20) {
                     header
                     if store.fixture { Label("SYNTHETIC TEST EVIDENCE · not your live network",systemImage:"testtube.2").font(.headline).foregroundStyle(amber) }
-                    if let error = store.error, !store.useImported {
+                    if let error = store.error, !store.useImported && !store.selectedPeer {
                         Label("Cannot read current evidence: \(error)",systemImage:"exclamationmark.triangle.fill").foregroundStyle(coral).padding().frame(maxWidth:.infinity,alignment:.leading).background(coral.opacity(0.08),in:RoundedRectangle(cornerRadius:12))
                     }
                     if store.section == "Monitoring & storage" { MonitoringView(store:store) }
                     else if store.wholeHome { WholeHomeView(store:store) }
                     else if let snapshot = store.snapshot {
                         if store.selectedPeer { Label("Cached peer evidence · freshness is based on observation time",systemImage:"arrow.triangle.2.circlepath").font(.system(size:13)).foregroundStyle(.secondary) }
-                        if store.paused && !store.useImported { Label("Monitoring stopped · showing saved history",systemImage:"pause.circle.fill").foregroundStyle(amber) }
+                        if store.observationPaused { Label("Monitoring stopped · showing saved history",systemImage:"pause.circle.fill").foregroundStyle(amber) }
                         if !store.isLive { Label("\(store.fixture ? "SYNTHETIC TEST EVIDENCE" : "SAVED SNAPSHOT") · captured \(localTime(snapshot.captured,seconds:true)). This view is not live.",systemImage:"clock.badge.exclamationmark").font(.callout.weight(.medium)).foregroundStyle(amber) }
                         if store.section == "Overview" { OverviewView(store:store,snapshot:snapshot) }
                         else if store.section == "Performance" { PerformanceView(store:store) }
@@ -369,7 +369,7 @@ struct PerformanceView: View {
                     Spacer()
                     Button("Report Zoom problem") { store.observationService = "Zoom / video meeting"; store.showObservation = true }.disabled(!store.canRecordObservation)
                 }
-                if store.currentStale || (store.paused && !store.useImported) || (!store.useImported && store.error != nil) {
+                if store.currentStale || (store.isLocal && store.error != nil) {
                     Label("No fresh evidence · measurements below are historical",systemImage:"clock.badge.exclamationmark").foregroundStyle(amber).padding(.top,12)
                 }
                 let total = recent.reduce(0) { $0+$1.pingTotal }
@@ -430,11 +430,11 @@ struct PerformanceView: View {
 struct HealthPanel: View {
     @ObservedObject var store: DashboardStore
     let state: CurrentEvidence
-    var stale: Bool { (store.paused && !store.useImported) || store.currentStale || (!store.useImported && store.error != nil) }
-    var title: String { store.paused && !store.useImported ? "Monitoring stopped" : stale ? "Monitoring needs attention" : state.internet == 2 ? "Internet reachable" : state.internet == 1 ? "Internet partially reachable" : state.internet == 0 ? "Internet checks failing" : "Internet status unknown" }
+    var stale: Bool { store.currentStale || (store.isLocal && store.error != nil) }
+    var title: String { store.observationPaused ? "Monitoring stopped" : stale ? "Monitoring needs attention" : state.internet == 2 ? "Internet reachable" : state.internet == 1 ? "Internet partially reachable" : state.internet == 0 ? "Internet checks failing" : "Internet status unknown" }
     var tint: Color { stale ? amber : levelColor(state.internet) }
     var description: String {
-        if store.paused && !store.useImported { return "Saved results are shown below. Resume from Monitoring & storage to collect new evidence." }
+        if store.observationPaused { return store.selectedPeer ? "This observer’s recording is stopped. Resume monitoring on that Mac to collect new evidence." : "Saved results are shown below. Resume from Monitoring & storage to collect new evidence." }
         if stale { return "Current connectivity is unknown. Check the recorder, login/sleep state and evidence freshness." }
         if state.internet == 2 { return "Fresh HTTPS requests passed to Cloudflare and Google." }
         if state.internet == 1 { return "One independent HTTPS endpoint passed; compare provider and protocol results." }
@@ -455,7 +455,7 @@ struct HealthPanel: View {
                 }
                 Spacer(minLength:12)
                 VStack(alignment:.trailing,spacing:6) {
-                    Label(store.paused && !store.useImported ? "STOPPED" : stale ? "STALE EVIDENCE" : store.isLive ? "RECORDER ACTIVE":"SAVED EVIDENCE",systemImage:stale ? "exclamationmark.triangle":"record.circle").font(.system(size:12,weight:.bold)).tracking(0.6).foregroundStyle(stale ? amber:mint)
+                    Label(store.observationPaused ? "STOPPED" : stale ? "STALE EVIDENCE" : store.isLive ? "RECORDER ACTIVE":"SAVED EVIDENCE",systemImage:stale ? "exclamationmark.triangle":"record.circle").font(.system(size:12,weight:.bold)).tracking(0.6).foregroundStyle(stale ? amber:mint)
                     Text("Sample \(elapsed(store.reference-state.completed)) ago").font(.system(size:13)).monospacedDigit()
                     Text("Checks every \(Int(state.interval)) sec").font(.system(size:13)).foregroundStyle(.secondary)
                     if state.speedActive { Label("Speed test load",systemImage:"speedometer").font(.system(size:13)).foregroundStyle(amber) }
@@ -764,7 +764,7 @@ struct EvidenceView: View {
             }
             Panel {
                 Text("Current probe evidence").font(.headline)
-                Text("\(localTime(snapshot.state.completed,seconds:true)) · \(snapshot.state.path) · \(store.isLive ? "local recorder":"saved snapshot")").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
+                Text("\(localTime(snapshot.state.completed,seconds:true)) · \(snapshot.state.path) · \(store.selectedPeer ? "synchronized peer cache" : store.isLive ? "local recorder":"saved snapshot")").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
                 Grid(alignment:.leading,horizontalSpacing:18,verticalSpacing:9) {
                     GridRow { Text("Check"); Text("Result"); Text("Latency"); Text("Target"); Text("Evidence") }.fontWeight(.semibold).foregroundStyle(.secondary)
                     ForEach(snapshot.state.checks) { check in GridRow {
@@ -912,7 +912,7 @@ struct DevicesView: View {
         }
     }
     func deviceRow(_ device: DeviceEvidence) -> some View {
-        let stale = store.currentStale || (!store.useImported && store.paused) || device.stale(at:store.reference)
+        let stale = store.currentStale || device.stale(at:store.reference)
         let status = stale ? "stale" : device.status
         let labels = ["responding":"Reply received", "address_reply":"Address replies", "recovering":"Recovering", "unreachable":"No reply", "checking":"Checking", "unknown":"Not yet verified", "address_changed":"Check address", "stale":"No fresh evidence"]
         let tint: Color = status == "responding" ? mint : ["checking","recovering","unreachable","address_changed"].contains(status) ? amber : .secondary

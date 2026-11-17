@@ -129,6 +129,36 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
             do { try malformedSnapshot.validate(); throw NSError(domain:"test",code:99) }
             catch let e as NSError { try require(e.code != 99,"Reject impossible imported measurement or duplicate timeline") }
         }
+        try require(!observationIsPaused(snapshot.state,local:false,localPaused:true),"Pausing this Mac must not pause the peer view")
+        try require(observationIsPaused(snapshot.state,local:true,localPaused:true),"Local pause applies to local evidence")
+        var pausedPeer=snapshot.state; pausedPeer.recordingPaused=true
+        try require(observationIsPaused(pausedPeer,local:false,localPaused:false),"Peer pause remains visible on the other Mac")
+        let syncRoot=root.appendingPathComponent("Sync")
+        let peerRoot=syncRoot.appendingPathComponent("peer")
+        let slotA=peerRoot.appendingPathComponent("slot-a"), slotB=peerRoot.appendingPathComponent("slot-b")
+        try FileManager.default.createDirectory(at:slotA,withIntermediateDirectories:true)
+        try FileManager.default.createDirectory(at:slotB,withIntermediateDirectories:true)
+        try JSONSerialization.data(withJSONObject:rawState).write(to:slotA.appendingPathComponent("state.json"))
+        try data.write(to:slotA.appendingPathComponent("samples-test.jsonl"))
+        var otherState=rawState; otherState["host"]=["hostname":"Second-Synthetic-Mini"]
+        try JSONSerialization.data(withJSONObject:otherState).write(to:slotB.appendingPathComponent("state.json"))
+        let pointer=peerRoot.appendingPathComponent("current.json")
+        try JSONSerialization.data(withJSONObject:["directory":"slot-a","generation":"a"]).write(to:pointer)
+        let lock=Darwin.open(peerRoot.appendingPathComponent("cache.lock").path,O_CREAT | O_RDWR,0o600)
+        defer { Darwin.close(lock) }
+        let peerReader=PeerEvidenceReader()
+        let firstPeer=try peerReader.update(root:syncRoot)
+        try require(firstPeer?.state.host == "Synthetic-Mini","Read first peer generation")
+        flock(lock,LOCK_EX)
+        try JSONSerialization.data(withJSONObject:["directory":"slot-b","generation":"a"]).write(to:pointer)
+        let busyPeer=try peerReader.update(root:syncRoot)
+        try require(busyPeer?.state.host == "Synthetic-Mini","During cache swap retain last complete snapshot without blocking UI")
+        flock(lock,LOCK_UN)
+        let nextPeer=try peerReader.update(root:syncRoot)
+        try require(nextPeer?.state.host == "Second-Synthetic-Mini","Read newly committed peer slot after unlocking")
+        try FileManager.default.removeItem(at:pointer)
+        let clearedPeer=try peerReader.update(root:syncRoot)
+        try require(clearedPeer == nil,"Explicit peer cache deletion must clear the displayed peer")
         let encoded=try JSONEncoder().encode(snapshot)
         try JSONDecoder().decode(DashboardSnapshot.self,from:encoded).validate()
         var invalid=snapshot; invalid.samples[0].lanes=[]

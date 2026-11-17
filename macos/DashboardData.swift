@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 let evidenceHome = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/NetworkMonitor")
 let programHome = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/NetworkMonitor")
@@ -591,4 +592,33 @@ func sharingStatus(state: String, updated: Double, lastExchange: Double?, now: D
     if state == "not_configured" { return "Not configured" }
     if state == "connected", let exchange = lastExchange, now-exchange >= -5, now-exchange <= 90 { return "Connected" }
     return "Disconnected · recording continues"
+}
+
+final class PeerEvidenceReader: @unchecked Sendable {
+    private var reader: EvidenceReader?
+    private var generation: String?
+    private var cached: DashboardSnapshot?
+    func reset() { reader = nil; generation = nil; cached = nil }
+    func update(root: URL) throws -> DashboardSnapshot? {
+        let peerRoot = root.appendingPathComponent("peer")
+        guard FileManager.default.fileExists(atPath:peerRoot.appendingPathComponent("current.json").path) else { reset(); return nil }
+        let fd = Darwin.open(peerRoot.appendingPathComponent("cache.lock").path,O_RDONLY | O_NOFOLLOW)
+        guard fd >= 0 else { return cached }
+        defer { Darwin.close(fd) }
+        guard flock(fd,LOCK_SH | LOCK_NB) == 0 else { return cached }
+        defer { flock(fd,LOCK_UN) }
+        let data = try Data(contentsOf:peerRoot.appendingPathComponent("current.json"))
+        guard let pointer = try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let directory = pointer["directory"] as? String, ["slot-a","slot-b"].contains(directory) else { return nil }
+        let path = root.appendingPathComponent("peer/"+directory)
+        let next = pointer["generation"] as? String
+        if reader == nil || generation != next { reader = EvidenceReader(root:path); generation = next }
+        reader?.root = path
+        cached = try reader?.update()
+        return cached
+    }
+}
+
+func observationIsPaused(_ state: CurrentEvidence?, local: Bool, localPaused: Bool) -> Bool {
+    state?.recordingPaused == true || (local && localPaused)
 }

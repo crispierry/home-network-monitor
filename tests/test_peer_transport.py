@@ -8,6 +8,8 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import monitor as m
 import peer_transport as t
@@ -99,6 +101,49 @@ class TransportTests(unittest.TestCase):
                 self.connection(self.two,lambda sock:send(sock,bad,True))
             self.assertEqual(before,sync.read(self.one/'peer/current.json'))
             self.assertFalse((self.one/'incoming').exists())
+
+    def test_bidirectional_exchange_over_mutually_authenticated_tls(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp); one=base/'one'; two=base/'two'
+            first=t.identity(one,'Mini-One'); second=t.identity(two,'Mini-Two')
+            pair(one,'Mini-One',second,second['fingerprint']); pair(two,'Mini-Two',first,first['fingerprint'])
+            c=sync.read(two/'config.json'); c['enabled']=True; sync.save(two/'config.json',c)
+            now=time.time()-1
+            for host,root in (('Mini-One',one),('Mini-Two',two)):
+                data=base/host; data.mkdir()
+                config={**m.DEFAULT,'satellites':[]}
+                checks=[dict(s,ok=True,started_at=m.stamp(now),latency_ms=10 if host=='Mini-One' else 20,detail='fixture') for s in m.specs(config)]
+                sample=dict(started_at=m.stamp(now),finished_at=m.stamp(now+.1),checks=checks,host={'hostname':host},interval_seconds=15,network={'interface':'en0' if host=='Mini-One' else 'en1'})
+                detector=m.Detector(config); detector.update(sample)
+                sync.save(data/'state.json',detector.state); m.journals(data)[0].append(sample)
+                sync.publish(data,root,host=host)
+            errors=[]; connections=[]
+            @contextmanager
+            def connection(root,config):
+                left,right=socket.socketpair(); left.settimeout(2); right.settimeout(2)
+                def server():
+                    try:
+                        with t.context(one,server=True).wrap_socket(left,server_side=True) as sock:
+                            t.check_peer(sock,one); t.handle(sock,one,sync.read(one/'config.json'))
+                    except Exception as error: errors.append(error)
+                    finally: left.close()
+                worker=threading.Thread(target=server); worker.start()
+                try:
+                    with t.context(root).wrap_socket(right,server_hostname='Mini-One.local') as sock:
+                        t.check_peer(sock,root); connections.append(sock.version()); yield sock
+                finally:
+                    right.close(); worker.join(3)
+                    self.assertFalse(worker.is_alive())
+            with patch.object(t,'connect',side_effect=connection): t.exchange(two)
+            self.assertFalse(errors); self.assertTrue(all(v=='TLSv1.3' for v in connections))
+            for root,expected,latency in ((one,'Mini-Two',20),(two,'Mini-One',10)):
+                brief=sync.peer_briefing(root,1,time.time())
+                self.assertEqual(brief['host']['hostname'],expected)
+                self.assertFalse(brief['recorder']['stale'])
+                self.assertEqual(brief['observed_samples'],1)
+                peer=sync.current_peer(root)
+                row=json.loads(next(peer.glob('samples-*.jsonl')).read_text().splitlines()[0])
+                self.assertEqual(row['cloudflare'],latency)
 
     def test_path_traversal_and_controls_not_exposed(self):
         for request in ({'op':'read','name':'../keys/private.pem','offset':0,'length':100},{'op':'stop'}):

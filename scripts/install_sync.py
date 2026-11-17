@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import monitor as m
 import manage
+import sync
 
 source=Path(__file__).resolve().parents[1]
 label='com.crispierry.network-monitor.sync'
@@ -28,4 +29,5 @@ job=dict(Label=label,ProgramArguments=[str(launcher),sys.executable,str(m.BASE/'
 plist.write_bytes(plistlib.dumps(job)); plist.chmod(0o600)
 manage.launchctl('enable',domain+'/'+label)
 manage.launchctl('bootstrap',domain,str(plist))
-print('Local summary worker installed. Cross-Mac sharing remains disabled until explicitly configured.')
+sharing=sync.optional(root/'config.json').get('enabled',False)
+print('Local summary worker installed. Cross-Mac sharing '+('remains enabled with existing pairing.' if sharing else 'is disabled until explicitly configured.'))

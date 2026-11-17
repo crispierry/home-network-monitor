@@ -93,21 +93,29 @@ struct SmallLabel: View {
     let text: String
     var body: some View { Text(text.uppercased()).font(.system(size:12,weight:.semibold,design:.rounded)).tracking(1.2).foregroundStyle(.secondary) }
 }
-struct ChartSeriesButton: View {
+struct ChartLegendLabel: View {
     let title: String
     let selected: Bool
     var tint: Color = ocean
+    var symbol: String = "circle"
+    var value: String? = nil
+    var detail: String? = nil
     let action: () -> Void
     var body: some View {
         Button(action:action) {
-            Label(title,systemImage:selected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size:13,weight:.medium)).foregroundStyle(selected ? tint : .secondary)
-                .padding(.horizontal,12).frame(minHeight:44)
-                .background(selected ? tint.opacity(0.1) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:9))
-                .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityValue(selected ? "Shown" : "Hidden")
+            VStack(alignment:.leading,spacing:5) {
+                Label(title,systemImage:selected ? symbol+".fill" : symbol)
+                    .font(.system(size:13,weight:.medium)).foregroundStyle(tint)
+                    .strikethrough(!selected)
+                if let value=value {
+                    Text(selected ? value : "Hidden").font(.system(size:20,weight:.semibold,design:.rounded)).monospacedDigit()
+                    Text(selected ? (detail ?? "") : "Click label to restore").font(.system(size:13)).foregroundStyle(.secondary)
+                }
+            }.opacity(selected ? 1 : 0.45).padding(.vertical,6)
+                .frame(maxWidth:.infinity,minHeight:44,alignment:.leading).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(selected ? "Shown" : "Hidden")
             .accessibilityHint("Toggle this chart series; other selections stay unchanged")
-            .help("Click to show or hide \(title)")
+            .help("Click legend label to show or hide \(title)")
     }
 }
 func toggleSeries(_ value:String, hidden:inout Set<String>) {
@@ -621,7 +629,7 @@ struct TimeChartGesture: View {
     }
 }
 func pingInspection(_ samples:[SamplePoint],time:Double,window:ClosedRange<Double>,name:String,cloudflareOnly:Bool=false,hiddenProviders:Set<String>=[]) -> String {
-    if hiddenProviders.count == 2 { return "Choose a provider above." }
+    if hiddenProviders.count == 2 { return "Click a legend label below to show measurements." }
     guard let s=inspectedSample(samples,at:time,window:window) else { return "\(name): no sample near this time" }
     var values=[String]()
     if !hiddenProviders.contains("Cloudflare") { values.append("Cloudflare "+(s.cloudflare.map { metric($0)+" ms" } ?? "no reply")) }
@@ -633,25 +641,29 @@ struct LatencyPanel: View {
     @ObservedObject var store: DashboardStore
     @Binding var compare: Bool
     @State private var hiddenProviders = Set<String>()
+    var providerSeries: [String] {
+        let providers=["Cloudflare","Google"]
+        return providers + (compare && !store.useImported ? store.imported.map { peer in providers.map { peer.state.host+" · "+$0 } } ?? [] : [])
+    }
+    var providerColors: [Color] { [ocean,.indigo,.pink,.orange] }
     func points(_ window:ClosedRange<Double>) -> [LatencyPoint] {
         var points=latencyPoints(samples:store.samples,window:window)
         if compare, !store.useImported, let peer=store.imported {
             points += latencyPoints(samples:peer.samples,window:window).map { var p=$0; p.series="\(peer.state.host) · \(p.series)"; return p }
         }
-        return points.filter { point in !hiddenProviders.contains(where: { point.series.hasSuffix($0) }) }
+        return points.filter { !hiddenProviders.contains($0.series) }
     }
     var body: some View {
         Panel {
             HStack { Text("Internet response time").font(.headline); Spacer(); Text("Lower is better").font(.system(size:13)).foregroundStyle(.secondary) }
             Text("Public ping latency · milliseconds · gaps are failed or missing checks").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
-            HStack(spacing:8) {
-                ForEach(["Cloudflare","Google"],id:\.self) { name in
-                    ChartSeriesButton(title:name,selected:!hiddenProviders.contains(name)) { toggleSeries(name,hidden:&hiddenProviders) }
+            ZoomableTimeChart(bounds:store.chartStart...store.chartEnd,emptyMessage:{ providerSeries.allSatisfy { hiddenProviders.contains($0) } ? "Click a legend label below to show measurements." : points($0).isEmpty ? "No successful ping measurements in this interval" : nil },inspect:{ time,window in
+                let localHidden=Set(["Cloudflare","Google"].filter { hiddenProviders.contains($0) })
+                var detail=pingInspection(store.samples,time:time,window:window,name:store.snapshot?.state.host ?? "This Mini",hiddenProviders:localHidden)
+                if compare, !store.useImported, let peer=store.imported {
+                    let peerHidden=Set(["Cloudflare","Google"].filter { hiddenProviders.contains(peer.state.host+" · "+$0) })
+                    if peerHidden.count < 2 { detail += "\n"+pingInspection(peer.samples,time:time,window:window,name:peer.state.host,hiddenProviders:peerHidden) }
                 }
-            }.padding(.top,10)
-            ZoomableTimeChart(bounds:store.chartStart...store.chartEnd,emptyMessage:{ hiddenProviders.count == 2 ? "Choose a provider above." : points($0).isEmpty ? "No successful ping measurements in this interval" : nil },inspect:{ time,window in
-                var detail=pingInspection(store.samples,time:time,window:window,name:store.snapshot?.state.host ?? "This Mini",hiddenProviders:hiddenProviders)
-                if compare, !store.useImported, let peer=store.imported { detail += "\n"+pingInspection(peer.samples,time:time,window:window,name:peer.state.host,hiddenProviders:hiddenProviders) }
                 return detail
             }) { window in
                 ForEach(points(window)) { p in
@@ -661,8 +673,13 @@ struct LatencyPanel: View {
                     }
                     if p.loaded { PointMark(x:.value("Time",Date(timeIntervalSince1970:p.time)),y:.value("Latency",p.value)).symbol(.diamond).symbolSize(30).foregroundStyle(amber) }
                 }
-            }.chartForegroundStyleScale(range:[ocean,Color.indigo,Color.pink,Color.orange])
+            }.chartForegroundStyleScale(domain:providerSeries,range:providerColors).chartLegend(.hidden)
              .id("\(store.hours)-\(store.snapshot?.state.host ?? "")-\(store.useImported)-\(compare)")
+            LazyVGrid(columns:[GridItem(.adaptive(minimum:145),alignment:.leading)],alignment:.leading,spacing:4) {
+                ForEach(Array(providerSeries.enumerated()),id:\.element) { index, name in
+                    ChartLegendLabel(title:name,selected:!hiddenProviders.contains(name),tint:providerColors[index]) { toggleSeries(name,hidden:&hiddenProviders) }
+                }
+            }
             Text("◆ Speed-test load · Wide views preserve peaks, not averages. Zoom reveals original samples, normally 15 seconds apart; it adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
         }
     }
@@ -678,8 +695,7 @@ struct SpeedChartSeries: Identifiable {
 }
 struct SpeedPanel: View {
     @ObservedObject var store: DashboardStore
-    @State private var hiddenHosts = Set<String>()
-    @State private var hiddenDirections = Set<String>()
+    @State private var hiddenSeries = Set<String>()
     @State private var showTrend = true
     @State private var showAverage = true
     @State private var visibleWindow: ClosedRange<Double>?
@@ -690,71 +706,50 @@ struct SpeedPanel: View {
     }
     var bounds: ClosedRange<Double> { store.start...store.reference }
     var window: ClosedRange<Double> { visibleWindow.map { ChartWindow.fit($0,inside:bounds) } ?? bounds }
-    func series(_ window:ClosedRange<Double>) -> [SpeedChartSeries] {
+    func allSeries(_ window:ClosedRange<Double>) -> [SpeedChartSeries] {
         hosts.enumerated().flatMap { index, host in
-            directions.enumerated().compactMap { directionIndex, direction in
-                guard !hiddenHosts.contains(host), !hiddenDirections.contains(direction) else { return nil }
+            directions.enumerated().map { directionIndex, direction in
                 let colors: [Color] = [ocean,.indigo,.orange,.pink]
                 let speeds=snapshots.first { $0.state.host == host }?.speeds ?? []
                 return SpeedChartSeries(host:host,direction:direction,color:colors[(index*2+directionIndex)%colors.count],summary:throughputSummary(speeds,direction:direction,window:window))
             }
         }
     }
+    func series(_ window:ClosedRange<Double>) -> [SpeedChartSeries] {
+        allSeries(window).filter { !hiddenSeries.contains($0.id) }
+    }
     func inspect(_ time:Double, _ window:ClosedRange<Double>) -> String {
         let selected=series(window)
-        if selected.isEmpty { return "Choose a Mini and a direction above to show measurements." }
+        if selected.isEmpty { return "Click a legend label below to show measurements." }
         return selected.map { row in
             guard let point=row.summary.points.min(by:{abs($0.time-time)<abs($1.time-time)}) else { return row.id+": no measurement in this interval" }
             return "\(row.id) · nearest measured test \(localTime(point.time,seconds:true)) · \(metric(point.value)) Mbps"
         }.joined(separator:"\n")
     }
-    var controls: some View {
+    var legend: some View {
         VStack(alignment:.leading,spacing:8) {
-            if hosts.count > 1 {
-                HStack(spacing:8) {
-                    Text("Minis").font(.system(size:13)).foregroundStyle(.secondary).frame(width:65,alignment:.leading)
-                    ForEach(hosts,id:\.self) { host in
-                        ChartSeriesButton(title:observerName(host),selected:!hiddenHosts.contains(host)) { toggleSeries(host,hidden:&hiddenHosts) }
-                    }
-                }
-            }
-            HStack(spacing:8) {
-                if hosts.count > 1 { Text("Direction").font(.system(size:13)).foregroundStyle(.secondary).frame(width:65,alignment:.leading) }
-                ForEach(directions,id:\.self) { direction in
-                    ChartSeriesButton(title:direction,selected:!hiddenDirections.contains(direction)) { toggleSeries(direction,hidden:&hiddenDirections) }
+            Text("Average measured throughput · visible interval").font(.callout.weight(.semibold))
+            LazyVGrid(columns:[GridItem(.adaptive(minimum:185),alignment:.leading)],alignment:.leading,spacing:8) {
+                ForEach(allSeries(window)) { row in
+                    ChartLegendLabel(title:row.id,selected:!hiddenSeries.contains(row.id),tint:row.color,
+                        symbol:row.direction == "Download" ? "circle" : "square",
+                        value:row.summary.mean.map { metric($0)+" Mbps" } ?? "Not measured",
+                        detail:"\(row.summary.points.count) measured tests") { toggleSeries(row.id,hidden:&hiddenSeries) }
                 }
             }
             HStack(spacing:18) {
                 Toggle("Trend curve",isOn:$showTrend)
                 Toggle("Average line",isOn:$showAverage)
             }.toggleStyle(.checkbox).font(.system(size:13)).padding(.top,4)
-        }.padding(.top,12)
-    }
-    var averages: some View {
-        VStack(alignment:.leading,spacing:8) {
-            Text("Average measured throughput · visible interval").font(.callout.weight(.semibold))
-            LazyVGrid(columns:[GridItem(.adaptive(minimum:170),alignment:.leading)],alignment:.leading,spacing:10) {
-                ForEach(series(window)) { row in
-                    VStack(alignment:.leading,spacing:5) {
-                        Label(row.id,systemImage:row.direction == "Download" ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                            .font(.system(size:13,weight:.medium)).foregroundStyle(row.color)
-                        Text(row.summary.mean.map { metric($0)+" Mbps" } ?? "Not measured")
-                            .font(.system(size:21,weight:.semibold,design:.rounded)).monospacedDigit()
-                        Text("\(row.summary.points.count) measured tests").font(.system(size:13)).foregroundStyle(.secondary)
-                    }.frame(maxWidth:.infinity,alignment:.leading).padding(10)
-                        .background(row.color.opacity(0.06),in:RoundedRectangle(cornerRadius:9))
-                }
-            }
-        }.padding(.top,16)
+        }.padding(.top,8)
     }
     var body: some View {
         Panel {
             HStack { Text("Download & upload").font(.headline); Spacer(); Text("Mbps").font(.system(size:13)).foregroundStyle(.secondary) }
-            Text("Click series to show any combination. Each dot is a measured speed test.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
-            controls
+            Text("Each dot is a measured test. Click legend labels below to show or hide any combination.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
             ZoomableTimeChart(bounds:bounds,emptyMessage:{ interval in
                 let rows=series(interval)
-                return rows.isEmpty ? "Choose a Mini and a direction above." : rows.allSatisfy { $0.summary.points.isEmpty } ? "No measured speeds in this interval" : nil
+                return rows.isEmpty ? "Click a legend label below to show measurements." : rows.allSatisfy { $0.summary.points.isEmpty } ? "No measured speeds in this interval" : nil
             },windowChanged:{ visibleWindow=$0 },inspect:inspect) { interval in
                 ForEach(series(interval)) { row in
                     ForEach(row.summary.points) { point in
@@ -771,7 +766,7 @@ struct SpeedPanel: View {
                 }
             }.chartSymbolScale(domain:directions,range:[BasicChartSymbolShape.circle,.square]).chartLegend(.hidden)
                 .id("speed-\(store.scope)-\(store.hours)-\(store.useImported)")
-            averages
+            legend
             Text("Dots: measured tests. Curve: moving average of up to 3 tests; it does not measure speeds between tests. Dashed line: arithmetic mean of visible measured values, separately per Mini and direction. Missing values are excluded. Trends break at failed tests, interface changes and gaps over 2 hours.")
                 .font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).padding(.top,12)
             if !store.wholeHome {
@@ -1227,16 +1222,11 @@ struct WholeHomeView: View {
         Panel {
             Text("Response time · observer comparison").font(.headline)
             Text("Cloudflare ping · milliseconds · gaps are missing or failed observations").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
-            HStack(spacing:8) {
-                ForEach(hosts,id:\.self) { host in
-                    ChartSeriesButton(title:observerName(host),selected:!hiddenLatencyHosts.contains(host)) { toggleSeries(host,hidden:&hiddenLatencyHosts) }
-                }
-            }.padding(.top,10)
             let selectedHosts=hosts.filter { !hiddenLatencyHosts.contains($0) }
             ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in
-                selectedHosts.isEmpty ? "Choose a Mini above." : store.homeSnapshots.contains { s in selectedHosts.contains(s.state.host) && s.samples.contains{window.contains($0.time) && $0.cloudflare != nil} } ? nil : "No successful ping measurements in this interval"
+                selectedHosts.isEmpty ? "Click a legend label below to show measurements." : store.homeSnapshots.contains { s in selectedHosts.contains(s.state.host) && s.samples.contains{window.contains($0.time) && $0.cloudflare != nil} } ? nil : "No successful ping measurements in this interval"
             },inspect:{ time,window in
-                selectedHosts.isEmpty ? "Choose a Mini above." : selectedHosts.map { host in snapshot(host).map{pingInspection($0.samples,time:time,window:window,name:host,cloudflareOnly:true)} ?? "\(host): no evidence" }.joined(separator:"\n")
+                selectedHosts.isEmpty ? "Click a legend label below to show measurements." : selectedHosts.map { host in snapshot(host).map{pingInspection($0.samples,time:time,window:window,name:host,cloudflareOnly:true)} ?? "\(host): no evidence" }.joined(separator:"\n")
             }) { window in
                 ForEach(selectedHosts,id:\.self) { host in
                     if let s=snapshot(host) {
@@ -1247,7 +1237,12 @@ struct WholeHomeView: View {
                         }
                     }
                 }
-            }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).id(store.hours)
+            }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).chartLegend(.hidden).id(store.hours)
+            HStack(spacing:20) {
+                ForEach(Array(hosts.enumerated()),id:\.element) { index, host in
+                    ChartLegendLabel(title:observerName(host),selected:!hiddenLatencyHosts.contains(host),tint:index == 0 ? ocean : .purple) { toggleSeries(host,hidden:&hiddenLatencyHosts) }
+                }
+            }.fixedSize(horizontal:false,vertical:true)
             Text("◆ Speed-test load · Wide views preserve peaks, not averages. Zoom reveals original samples, normally 15 seconds apart; it adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary)
         }
     }

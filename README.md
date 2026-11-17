@@ -31,7 +31,7 @@ An interruption count requires overlapping confirmed failures to **both** public
 
 Wide latency charts preserve peaks instead of drawing averages. Zoom in for individual measurements; use the performance statistics to distinguish typical latency from occasional spikes.
 
-Click a chart's series buttons to show any combination of available Minis, download/upload directions, or latency providers. Speed charts show measured dots, an optional smooth trend curve and optional dashed average lines. The numeric averages and test counts use only measured values in the visible time interval, separately for each Mini and direction. Zooming recalculates them. The curve averages up to three recent tests; it is not a measurement of speeds between tests. Missing values are excluded, and the curve breaks at failed tests, interface changes and gaps over two hours. Use **Reset** to return to the full history range.
+Click the legend labels beneath a graph to show or hide its series. Speed labels identify each Mini and direction separately, so any combination can stay visible; hidden labels stay available to restore a series. Speed charts show measured dots, an optional smooth trend curve and optional dashed average lines. The numeric averages and test counts use only measured values in the visible time interval, separately for each Mini and direction. Zooming recalculates them. The curve averages up to three recent tests; it is not a measurement of speeds between tests. Missing values are excluded, and the curve breaks at failed tests, interface changes and gaps over two hours. Use **Reset** to return to the full history range.
 
 ## One computer is enough
 

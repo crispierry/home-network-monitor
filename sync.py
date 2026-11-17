@@ -378,7 +378,7 @@ def run(root=ROOT,data=m.DATA):
                     status.update(state='connected',last_sync_at=now,error=None); failures=0
                 else:
                     status.update(state='unavailable',error='Peer exchange unavailable; local recording continues'); failures+=1
-                child=None; next_attempt=now+min(300,30*2**min(failures,4))
+                child=None; next_attempt=now+(10 if failures==0 else min(300,30*2**min(failures,4)))
             elif now>deadline:
                 os.killpg(child.pid,signal.SIGKILL); deadline=float('inf')
                 status.update(state='unavailable',error='Peer transfer timed out; last good cache retained')
@@ -388,7 +388,7 @@ def run(root=ROOT,data=m.DATA):
                 status.update(published_at=now,host=manifest['host'] if manifest else None,local_bytes=tree_bytes(data),sync_bytes=tree_bytes(root))
             except (ValueError,OSError,KeyError,TypeError):
                 status.update(error='Local summary unavailable',state='error')
-            next_publish=now+30
+            next_publish=now+10
         if now>=next_resources:
             try:
                 status['resources'],resource_counters=resource_sample(resource_counters)

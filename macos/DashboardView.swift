@@ -966,7 +966,7 @@ struct WholeHomeView: View {
                             Text("\(elapsed(store.now-s.state.completed)) ago · \(s.state.passing)/\(s.state.checks.count) checks passed in that sample").font(.system(size:13)).foregroundStyle(.secondary)
                         } else {
                             Label("Not connected · no evidence yet",systemImage:"wifi.slash").foregroundStyle(.secondary).padding(.top,16)
-                            Text("Sharing: \(store.syncStatus). Check the recorder on this Mac directly; its current health is unknown here.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
+                            Text("Sharing: \(store.syncStatus). Check that computer’s recorder directly; its current health is unknown here.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
                         }
                     }
                 }

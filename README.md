@@ -1,10 +1,10 @@
 # Network Monitor
 
-Network Monitor records evidence of intermittent home-network problems and displays it in a native macOS dashboard. Run it on a wired Mac and a wireless Mac to compare their paths when the internet slows down or becomes unreachable.
+Network Monitor records evidence of intermittent home-network problems and displays it in a native macOS dashboard. It runs fully on one Mac. An optional second Mac adds a wired-versus-wireless comparison when the internet slows down or becomes unreachable.
 
 The recorder continues working when the network fails or the dashboard is closed. Evidence stays on each Mac. No cloud account, router password, telemetry service, or paid subscription is required.
 
-**Release:** 2.6.0 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
+**Release:** 2.6.1 · **Platform:** Apple Silicon, macOS 14 or later · **License:** MIT
 
 This is a source release. You build the app locally; a notarized installer is not provided.
 
@@ -20,6 +20,14 @@ This is a source release. You build the app locally; a notarized installer is no
 | What else was happening? | Observer CPU/memory/interface context, supported gateway status pages, and bounded diagnostic captures |
 
 A successful check proves only what it tested. Device replies do not prove camera video or voice-assistant cloud access works. Clean public probes cannot rule out a problem on another computer or on Zoom's actual media path.
+
+## One computer is enough
+
+The recorder, dashboard, incident detection, device checks, internet speed tests, and local agent queries all work on a single Mac. Leave `peer` as `""` and skip the optional sharing setup. No second account, computer, or synchronization service is required. Without configured satellites or a peer, the default profile runs 14 checks.
+
+The dashboard shows only configured path lanes and offers cross-observer views when peer evidence is available. Missing optional process/resource measurements do not stop recording; Activity Monitor can show CPU and memory use without the summary worker.
+
+A second computer is useful for comparing two paths and is required for the optional iperf3 LAN test. One observer cannot conclusively separate its own Wi-Fi or hardware problem from a shared network fault. Your existing two-computer configuration is preserved on upgrade.
 
 ## Before installing
 
@@ -55,11 +63,11 @@ Edit `config.local.json` before installing:
 | `expected_host` | This Mac's LocalHostName, printed by the command above |
 | `orbi` | Main router's IPv4 address |
 | `gateway` | Upstream gateway's IPv4 address |
-| `peer` | Other observer's hostname, such as `Observer-Two.local` |
+| `peer` | Leave `""` for one computer (the default). Set a hostname only if you want to probe another computer. |
 | `satellites` | An array of confirmed satellite IPv4 addresses, or `[]` |
 | `speed_enabled` | Leave `false` initially, or configure the schedule below |
 
-The shipped `192.0.2.x` addresses are documentation examples, not working targets. Keep the other defaults unless you need to change them. Without a reachable peer, its check will fail; that does not establish an internet outage.
+The shipped `192.0.2.x` addresses are documentation examples, not working targets. Keep the other defaults unless you need to change them. An empty `peer` removes that check entirely. If you explicitly configure a peer, its failed replies remain visible; they do not establish an internet outage.
 
 Edit `devices.local.json` with confirmed device addresses, MACs, and dated attachment notes, or replace its contents with `[]`. Attachment notes are a manual inventory, not live satellite association. These two local files are ignored by Git. Installed settings are stored outside the checkout.
 
@@ -89,8 +97,8 @@ Speed tests are disabled in the public example. To enable them, set `speed_enabl
 
 | Observer | Slot | Earliest start in each selected hour |
 | --- | --- | --- |
-| First Mac | `0` | :15:30 |
-| Second Mac | `1` | :45:30 |
+| Only Mac, or first of two | `0` | :15:30 |
+| Optional second Mac | `1` | :45:30 |
 
 Schedules use **America/Los_Angeles**, including daylight saving time. To test hourly, list every integer from `0` through `23` in `speed_hours`. The test starts when the recorder next checks the schedule within its allowed window; it is not guaranteed to start at the exact second. Skipped tests do not cause a catch-up burst.
 
@@ -109,7 +117,7 @@ Tests consume bandwidth and can affect calls. Reduce the schedule when the inves
 
 For a short stall, expand **Performance → Investigations and computer details** and use **Connection investigation**. See [INVESTIGATIONS.md](INVESTIGATIONS.md) for captures, route inspection, and optional iperf3 tests.
 
-Use your existing authenticated remote desktop connection to view the app remotely. For an offline comparison, choose **Evidence → Export snapshot…** on one Mac, transfer the file privately, and use **Import other Mini…** on the other. Snapshots contain private network evidence and do not update themselves. Optional encrypted sharing requires separate [pairing and verification](SYNC_SETUP.md); it is disabled by default. Do not port-forward the app.
+Use your existing authenticated remote desktop connection to view the app remotely. For an offline comparison, choose **Evidence → Export snapshot…** on one Mac, transfer the file privately, and use **Import snapshot…** on the other. Snapshots contain private network evidence and do not update themselves. Optional encrypted sharing requires separate [pairing and verification](SYNC_SETUP.md); it is disabled by default. Do not port-forward the app.
 
 ## Read results from Terminal or a local agent
 

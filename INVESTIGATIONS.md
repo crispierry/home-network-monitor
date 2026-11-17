@@ -1,4 +1,4 @@
-# Connection investigations — version 2.6.0
+# Connection investigations — version 2.6.1
 
 Open **Performance**, expand **Investigations and computer details**, then find **Connection investigation**. The panel names the observing Mini. Reports describe saved episodes, not current health. Whole home's panel uses this Mac's local report; choose an imported snapshot to inspect exported reports from the other Mini. Automatic sharing of investigation reports is not implemented.
 
@@ -24,7 +24,7 @@ Without MTR, the app uses macOS traceroute: three sequential passes per destinat
 
 ## Controlled test between the Minis
 
-This is a manual experiment, not a scheduled feature. Use it outside meetings and outside :14–:20 and :44–:50 Pacific, which are reserved for internet speed tests. It may temporarily slow the LAN and transfer substantial data. The test measures these two paths, not every room or AT&T capacity.
+This optional test requires a second computer with iperf3. Ordinary monitoring, captures, route inspection, and internet speed tests work on one Mac. This is a manual experiment, not a scheduled feature. Use it outside meetings and outside :14–:20 and :44–:50 Pacific, which are reserved for internet speed tests. It may temporarily slow the LAN and transfer substantial data. The test measures these two paths, not every room or AT&T capacity.
 
 Install the official Homebrew `iperf3` package on both Minis if needed:
 

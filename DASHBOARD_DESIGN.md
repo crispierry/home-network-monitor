@@ -1,6 +1,6 @@
 # Dashboard design
 
-Overview answers: is evidence fresh, can this observer reach the internet, which paths differ, and when did symptoms begin? The default view is this observer. Cross-observer views explicitly label source and age; a missing peer stays unknown.
+Overview answers: is evidence fresh, can this observer reach the internet, which paths differ, and when did symptoms begin? The default view is this observer, and a single computer is a complete supported setup. Hide unconfigured peer/satellite lanes and comparison controls until peer evidence exists; retain failures for configured checks. Cross-observer views explicitly label source and age; a missing peer stays unknown.
 
 Performance separates latency/loss from bandwidth. Time selection, zoom/detail controls and sample inspection support granular investigation. Missing replies and observation gaps remain visible; percentiles describe successful replies and disclose counts. Speed-test intervals are marked because the measurement itself creates load.
 

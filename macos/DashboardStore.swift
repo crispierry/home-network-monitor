@@ -9,10 +9,10 @@ import Darwin
     @Published var scope = "This Mini"
     @Published var syncStatus = "Not configured"
     @Published var lastSync: Double?
-    @Published var localBytes: Double = 0
-    @Published var syncBytes: Double = 0
+    @Published var localBytes: Double?
+    @Published var syncBytes: Double?
     private let peerCache = PeerEvidenceReader()
-    @Published var resourceSummary = "Measuring resource use…"
+    @Published var resourceSummary = "Process measurements unavailable. Use Activity Monitor to inspect CPU and memory; recording works independently."
     var syncRoot: URL { fixture ? root.appendingPathComponent("Sync") : programHome.appendingPathComponent("Sync") }
     var wholeHome: Bool { scope == "Both Minis" && !useImported }
     var selectedPeer: Bool { scope == "Other Mini" && !useImported }
@@ -92,14 +92,17 @@ import Darwin
                 let updated = status["updated_at"] as? Double ?? 0
                 self.syncStatus = Date().timeIntervalSince1970-updated > 90 && updated > 0 ? "Sync worker not reporting" : state == "connected" ? "Connected" : state == "not_configured" ? "Not configured" : "Peer unavailable · saved data"
                 self.lastSync = status["last_sync_at"] as? Double
-                self.localBytes = status["local_bytes"] as? Double ?? 0
-                self.syncBytes = status["sync_bytes"] as? Double ?? 0
-                if let resources = status["resources"] as? [String:[String:Double]] {
+                self.localBytes = status["local_bytes"] as? Double
+                self.syncBytes = status["sync_bytes"] as? Double
+                if let at = status["resources_at"] as? Double, at <= self.now+5, self.now-at <= 180, let resources = status["resources"] as? [String:[String:Double]] {
                     self.resourceSummary = ["recorder","dashboard","sync"].compactMap { name in
                         guard let row = resources[name], let ram = row["rss_mib"] else { return nil }
                         return "\(name.capitalized): \(row["cpu_percent"].map{String(format:"%.2f%% CPU",$0)} ?? "CPU measuring") · \(String(format:"%.0f",ram)) MiB RAM"
                     }.joined(separator:"\n")
+                } else {
+                    self.resourceSummary = "Process measurements unavailable. Use Activity Monitor to inspect CPU and memory; recording works independently."
                 }
+                if self.peer == nil && (self.selectedPeer || self.wholeHome) { self.scope = "This Mini" }
                 switch result {
                 case .success(let value): self.live = value; self.error = nil
                 case .failure(let problem):
@@ -110,7 +113,7 @@ import Darwin
     }
     func revealEvidence() { NSWorkspace.shared.open(root) }
     func importSnapshot() {
-        let panel = NSOpenPanel(); panel.title = "Open the other Mini's exported evidence"; panel.allowedContentTypes = [.json]
+        let panel = NSOpenPanel(); panel.title = "Open a saved evidence snapshot"; panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -131,7 +134,7 @@ import Darwin
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             try encoder.encode(value).write(to:url, options:.atomic)
             try FileManager.default.setAttributes([.posixPermissions:0o600], ofItemAtPath:url.path)
-            message = "Saved \(url.lastPathComponent). Import it in Network Monitor on the other Mini to compare the same time window."
+            message = "Saved \(url.lastPathComponent). Keep it for later investigation or import it in Network Monitor to compare saved evidence."
         } catch { message = "Export failed: \(error.localizedDescription)" }
     }
     func addObservation(time: Date, service: String, others: String, note: String) {

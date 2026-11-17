@@ -23,7 +23,7 @@ python3 scripts/dashboard_fixture.py /tmp/network-monitor-example --state outage
 "dist/Network Monitor.app/Contents/MacOS/NetworkMonitor" --fixture --evidence-dir /tmp/network-monitor-example
 ```
 
-Repeat with `--state recovered` and `--state stale`, choosing a new directory for each. Never mix synthetic records with installed evidence. Check:
+Use `--single-computer` to check the default standalone layout without peer or satellite checks. Repeat with `--state recovered` and `--state stale`, choosing a new directory for each. Never mix synthetic records with installed evidence. Check:
 
 - Navigation, keyboard access, and full-row disclosure controls.
 - Readability at the minimum window size and in light/dark appearances.

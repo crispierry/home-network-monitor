@@ -27,6 +27,8 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
         let call = recentPathMetrics(callSamples,key:\.google,end:now)
         try require(call.replies == 5 && call.p95 == 500 && call.variation == 10,"Recent performance excludes old points and breaks variation at loss, gaps and path changes")
         try require(recentPathMetrics([],key:\.orbi,end:now).median == nil,"No performance evidence must not become zero")
+        try require(configuredLaneIndices([check("orbi_icmp",true,now)]) == [0,1,2,3],"A single observer has no absent-peer or satellite lanes")
+        try require(configuredLaneIndices([check("peer_icmp",false,now),check("satellite_1_icmp",false,now)]) == [0,1,2,3,4,6],"Configured failed paths remain visible rather than being hidden")
         try require(groupStatus([check("a",true,now)],ids:["a","b"]) == -1,"Missing checks must be unknown")
         try require(groupStatus([check("a",true,now),check("b",false,now)],ids:["a","b"]) == 1,"Partial success is degraded, not offline")
         try require(number(true) == nil && number(-1) == nil && number(Double.infinity) == nil,"Reject invalid numeric evidence")

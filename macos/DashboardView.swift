@@ -134,19 +134,23 @@ struct DashboardView: View {
                 Divider()
                 VStack(alignment:.leading,spacing:10) {
                     SmallLabel(text:"Observation points")
-                    Button { store.scope = "Both Minis"; store.useImported = false } label: {
-                        hostRow(name:"Whole home",subtitle:"Wired + Wi-Fi",selected:store.wholeHome,image:"house")
-                    }.buttonStyle(.plain)
+                    if store.peer != nil {
+                        Button { store.scope = "Both Minis"; store.useImported = false } label: {
+                            hostRow(name:"Whole home",subtitle:"Compare observers",selected:store.wholeHome,image:"house")
+                        }.buttonStyle(.plain)
+                    }
                     Button { store.useImported = false; store.scope = "This Mini" } label: {
                         hostRow(name:store.live?.state.host ?? "This Mac", subtitle:store.fixture ? "Synthetic test evidence" : "Local recorder", selected:!store.useImported && store.scope == "This Mini", image:"desktopcomputer")
                     }.buttonStyle(.plain)
-                    Button { store.useImported = false; store.scope = "Other Mini" } label: {
-                        hostRow(name:store.peer?.state.host ?? "Other Mini",subtitle:"Synchronized local copy",selected:store.selectedPeer,image:"macmini")
-                    }.buttonStyle(.plain)
+                    if let peer = store.peer {
+                        Button { store.useImported = false; store.scope = "Other Mini" } label: {
+                            hostRow(name:peer.state.host,subtitle:"Synchronized local copy",selected:store.selectedPeer,image:"desktopcomputer")
+                        }.buttonStyle(.plain)
+                    }
                     if let other = store.imported {
                         Button { store.useImported = true } label: { hostRow(name:other.state.host,subtitle:"Saved snapshot",selected:store.useImported,image:"doc.badge.clock") }.buttonStyle(.plain)
                     }
-                    Button("Import other Mini…",systemImage:"square.and.arrow.down",action:store.importSnapshot).font(.system(size:13)).buttonStyle(.borderless)
+                    Button("Import snapshot…",systemImage:"square.and.arrow.down",action:store.importSnapshot).font(.system(size:13)).buttonStyle(.borderless)
                 }
                 Spacer()
                 VStack(alignment:.leading,spacing:7) {
@@ -211,7 +215,7 @@ struct DashboardView: View {
             VStack(alignment:.leading,spacing:7) {
                 SmallLabel(text:"Home network / \(store.section)")
                 Text(store.section == "Overview" ? "Network overview" : store.section).font(.system(size:25,weight:.semibold,design:.rounded))
-                if store.wholeHome { Text("Mini-One · Ethernet   +   Mini-Two · Wi-Fi").font(.callout).foregroundStyle(.secondary) }
+                if store.wholeHome { Text(store.homeSnapshots.map { "\($0.state.host) · \($0.state.path)" }.joined(separator:"   +   ")).font(.callout).foregroundStyle(.secondary) }
                 else if let state = store.snapshot?.state { Text("\(state.host)  ·  \(state.path)").font(.callout).foregroundStyle(.secondary) }
             }
             Spacer(minLength:16)
@@ -238,7 +242,7 @@ struct OverviewView: View {
             HealthPanel(store:store,state:state)
             HStack {
                 Label("\(state.devices?.count ?? 0) watched devices",systemImage:"house.fill").font(.callout.weight(.medium))
-                Text("Cameras, speakers & Minis").font(.system(size:13)).foregroundStyle(.secondary)
+                Text("Local device reachability").font(.system(size:13)).foregroundStyle(.secondary)
                 Spacer()
                 Button("View devices") { store.section = "Devices" }.buttonStyle(.borderless)
             }
@@ -268,7 +272,7 @@ struct OverviewView: View {
                 Panel {
                     Label("Remote access is a separate question",systemImage:"person.crop.rectangle.badge.exclamationmark").font(.headline)
                     Text("Fresh internet requests from a Mini do not prove that Workbench or a Ring camera is reachable remotely.").font(.callout).foregroundStyle(.secondary).padding(.top,8)
-                    Text("If access fails while other devices work, record the time and affected devices. Compare that report with both Minis' evidence.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
+                    Text("If access fails while other devices work, record the time and affected devices. Compare that report with this Mac’s evidence and, if available, another observer.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
                     Button("Report a symptom",action:{store.showObservation=true}).disabled(!store.canRecordObservation).padding(.top,10)
                 }.frame(maxWidth:.infinity)
             }
@@ -388,21 +392,23 @@ struct PerformanceView: View {
             }.disclosureGroupStyle(ComfortableDisclosureStyle())
             Panel {
                 Text("Separate the Mac, Wi-Fi and shared internet path").font(.headline)
-                Text("Compare the exact meeting time on both Minis. Use Whole home to compare the other Mini’s cached observations. Check its observation time before drawing conclusions.").font(.callout).foregroundStyle(.secondary).padding(.top,8)
+                Text("Start with this Mac’s router, internet and computer measurements at the exact meeting time. A second observer is optional; its overlapping results can help separate local and shared problems.").font(.callout).foregroundStyle(.secondary).padding(.top,8)
                 VStack(alignment:.leading,spacing:10) {
-                    Text("Only the Wi-Fi Mini worsens, including its Orbi response → investigate that Mac's Wi-Fi path or local load.")
-                    Text("Both Minis worsen to public endpoints while Orbi stays steady → investigate the shared internet path or congestion.")
-                    Text("Both Minis worsen to the Orbi → investigate local connectivity or the main router.")
+                    Text("Internet responses worsen while the router stays steady → investigate the upstream path or congestion.")
+                    Text("Responses to the router also worsen → investigate this Mac, its local link or the router.")
+                    if store.peer != nil || store.imported != nil {
+                        Text("Compare fresh overlapping evidence from the other observer. Problems on only one path suggest a local issue; simultaneous failures suggest a shared path.")
+                    }
                     Text("Network probes stay steady but Zoom struggles → inspect Zoom's actual connection and the meeting computer; this does not clear the network or prove a machine fault.")
                 }.font(.callout).padding(.top,14)
                 Text("These are hypotheses. Router ICMP handling, filtering and host scheduling can affect probes. A home network recorder cannot diagnose a meeting running on a different connection.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,14)
-                HStack { Button("Import other Mini…",action:store.importSnapshot); if store.imported != nil && !store.useImported { Toggle("Overlay peer latency",isOn:$compare).toggleStyle(.switch).controlSize(.small) } }.padding(.top,12)
+                HStack { Button("Import snapshot…",action:store.importSnapshot); if store.imported != nil && !store.useImported { Toggle("Overlay peer latency",isOn:$compare).toggleStyle(.switch).controlSize(.small) } }.padding(.top,12)
             }
             Panel {
                 Text("During a poor Zoom meeting").font(.headline)
                 Text("1. Report the problem here to mark its time on the charts. Include the meeting computer and location.").padding(.top,12)
                 Text("2. Open Zoom → Settings → Statistics. Check Overall CPU/memory, then Audio and Video send/receive loss, latency and jitter.").padding(.top,8)
-                Text("3. Compare that time with both Minis. High CPU suggests local load; shared network deterioration supports a common connection problem. Neither alone is a definitive diagnosis.").padding(.top,8)
+                Text("3. Compare that time with this Mac’s evidence. High CPU suggests local load; fresh results from an optional second observer can help identify a shared problem. Neither alone is a definitive diagnosis.").padding(.top,8)
                 Text("Keep bandwidth tests for outside the meeting: they deliberately load the connection. Scheduled tests follow each observer’s configured hours. This app records CPU and memory pressure on each monitoring Mini, but not Zoom media statistics or the separate meeting computer.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,12)
                 Link("Zoom's guide to meeting statistics",destination:URL(string:"https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0070504")!).font(.system(size:13)).padding(.top,10)
             }
@@ -632,7 +638,9 @@ struct SpeedPanel: View {
 struct TimelinePanel: View {
     @ObservedObject var store: DashboardStore
     @State var selected: Date?
-    var spans:[LaneSpan] { laneSpans(samples:store.samples,start:store.chartStart,end:store.chartEnd) }
+    var laneIndices: [Int] { configuredLaneIndices(store.snapshot?.state.checks ?? []) }
+    var visibleLanes: [String] { laneIndices.map { laneNames[$0] } }
+    var spans:[LaneSpan] { laneSpans(samples:store.samples,start:store.chartStart,end:store.chartEnd).filter { visibleLanes.contains($0.lane) } }
     var nearest: SamplePoint? { guard let selected=selected else{return nil}; return store.samples.first { $0.time<=selected.timeIntervalSince1970 && $0.time+$0.interval>selected.timeIntervalSince1970 } }
     var body: some View {
         Panel {
@@ -640,14 +648,14 @@ struct TimelinePanel: View {
             Text("Each lane answers a different question. Satellite and gateway checks measure management reachability.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,4)
             HStack(alignment:.top,spacing:16) {
                 VStack(alignment:.leading,spacing:0) {
-                    ForEach(laneNames,id:\.self) { Text($0).font(.system(size:11,weight:.medium)).frame(height:26,alignment:.center) }
+                    ForEach(visibleLanes,id:\.self) { Text($0).font(.system(size:13,weight:.medium)).frame(height:26,alignment:.center) }
                 }.frame(width:135,alignment:.leading)
                 VStack(spacing:6) {
                     GeometryReader { geometry in
                         Canvas { context,size in
                             let width=size.width, duration=store.chartEnd-store.chartStart
                             for span in spans {
-                                let row=laneNames.firstIndex(of:span.lane) ?? 0
+                                let row=visibleLanes.firstIndex(of:span.lane) ?? 0
                                 let x=(span.start-store.chartStart)/duration*width
                                 let w=(span.end-span.start)/duration*width
                                 let rect=CGRect(x:x,y:Double(row)*26+6,width:max(0.5,w),height:14)
@@ -669,12 +677,12 @@ struct TimelinePanel: View {
                         }).onContinuousHover { phase in
                             if case .active(let point)=phase { selected=Date(timeIntervalSince1970:store.chartStart+max(0,min(1,point.x/geometry.size.width))*(store.chartEnd-store.chartStart)) }
                         }.accessibilityLabel("Path timeline. Click, drag or hover to inspect a time; passing, mixed, failing, and unknown are listed below.")
-                    }.frame(height:182)
+                    }.frame(height:CGFloat(visibleLanes.count)*26)
                     HStack { Text(Date(timeIntervalSince1970:store.chartStart),format:.dateTime.hour().minute()); Spacer(); Text(Date(timeIntervalSince1970:(store.chartStart+store.chartEnd)/2),format:.dateTime.hour().minute()); Spacer(); Text(Date(timeIntervalSince1970:store.chartEnd),format:.dateTime.hour().minute()) }.font(.system(size:13)).foregroundStyle(.secondary)
                 }
             }.padding(.top,16).padding(.bottom,12)
             if let selected=selected {
-                Text(nearest.map { s in localTime(s.time,seconds:true)+" · "+zip(laneNames,s.lanes).map{"\($0.0): \(levelText($0.1))"}.joined(separator:" · ") } ?? "\(localTime(selected.timeIntervalSince1970,seconds:true)) · No observation at this time. Do not infer success or failure.").font(.system(size:13)).foregroundStyle(.secondary)
+                Text(nearest.map { s in localTime(s.time,seconds:true)+" · "+laneIndices.map{"\(laneNames[$0]): \(levelText(s.lanes[$0]))"}.joined(separator:" · ") } ?? "\(localTime(selected.timeIntervalSince1970,seconds:true)) · No observation at this time. Do not infer success or failure.").font(.system(size:13)).foregroundStyle(.secondary)
             } else { Text("Click, drag or hover to inspect a moment. Purple dashed lines mark your reported symptoms; grey means no observation.").font(.system(size:13)).foregroundStyle(.secondary) }
             let observed=observedSeconds(samples:store.samples,start:store.start,end:store.reference)
             Text("Recorded coverage: \(elapsed(observed)) of the selected \(store.hours)-hour window. Charts begin at the first retained observation; earlier time has no evidence.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
@@ -733,7 +741,7 @@ struct EvidenceView: View {
             }
             HStack(alignment:.top,spacing:18) {
                 Panel { Text("What this can establish").font(.headline); bullet("Whether this Mini can make fresh outbound HTTPS requests."); bullet("Whether DNS and local router/gateway/satellite management probes respond."); bullet("Which checks failed first, recovered, or lacked observations."); bullet("Measured download/upload and responsiveness under test load.") }
-                Panel { Text("What still needs other evidence").font(.headline); bullet("Inbound Workbench access remotely and camera cloud availability."); bullet("A satellite's actual radio/backhaul health and outage-time client attachments."); bullet("Router internal faults and the exact cause of a loss; counters and route traces help narrow the path."); bullet("Intervals when both Minis are asleep, logged out or without power.") }
+                Panel { Text("What still needs other evidence").font(.headline); bullet("Inbound Workbench access remotely and camera cloud availability."); bullet("A satellite's actual radio/backhaul health and outage-time client attachments."); bullet("Router internal faults and the exact cause of a loss; counters and route traces help narrow the path."); bullet("Intervals when this Mac is asleep, logged out or without power.") }
             }
             Panel {
                 Label("Ready for the next interruption",systemImage:"waveform.path.ecg").font(.headline)
@@ -771,7 +779,7 @@ struct EvidenceView: View {
                     }.font(.system(size:13)).padding(.top,10)
                 }
             }
-            Panel { Text("Read the attachment map carefully").font(.headline); Text("Last verified November 16: Mini-Two and the doorbell use the main Orbi; the likely garage Spotlight Cam uses the bedroom satellite. Mini-One uses Ethernet but also has Wi-Fi enabled. These are post-recovery observations. The monitor cannot continuously confirm which access point a camera uses.").font(.callout).foregroundStyle(.secondary).padding(.top,8); if let signal=snapshot.state.wifiSignal { Text("Last Wi-Fi signal/noise: \(signal) · \(snapshot.state.wifiChannel ?? "channel unavailable") · \(snapshot.state.wifiAt.map{localTime($0)} ?? "time unavailable")").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8) } }
+            Panel { Text("Read the attachment map carefully").font(.headline); Text("Device attachment labels come from your dated manual inventory. Check the router’s device list when you need a current association. The monitor cannot continuously confirm which access point a device uses.").font(.callout).foregroundStyle(.secondary).padding(.top,8); if let signal=snapshot.state.wifiSignal { Text("Last Wi-Fi signal/noise: \(signal) · \(snapshot.state.wifiChannel ?? "channel unavailable") · \(snapshot.state.wifiAt.map{localTime($0)} ?? "time unavailable")").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8) } }
         }
     }
     func bullet(_ text:String) -> some View { HStack(alignment:.top,spacing:8) { Text("•").foregroundStyle(ocean); Text(text) }.font(.callout).foregroundStyle(.secondary).padding(.top,8) }
@@ -829,12 +837,16 @@ struct MonitoringView: View {
                 Text("Resources on this Mac").font(.headline)
                 Text(store.resourceSummary).font(.callout).padding(.top,8)
                 Text("CPU is a recent sample; 100% means one core. RAM is resident memory. Speed tests can temporarily increase load.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,6)
-                Text("Local evidence: \(metric(store.localBytes/1048576)) MiB · synchronization: \(metric(store.syncBytes/1048576)) MiB").padding(.top,8)
-                Text("Local journals: 320 MiB maximum plus state. Compact exports: 16 MiB. Peer cache: at most 64 MiB, including transfer staging and one prior generation. Size limits can shorten retained history. Exported archives and Trash are separate.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
-                Text("Peer synchronization: \(store.syncStatus)").font(.callout).padding(.top,8)
-                Button("Clear peer cache…") { store.manage("clear-peer-cache") }.padding(.top,10)
+                Text("Local evidence: \(store.localBytes.map { metric($0/1048576)+" MiB" } ?? "not measured") · synchronization: \(store.syncBytes.map { metric($0/1048576)+" MiB" } ?? "not measured")").padding(.top,8)
+                Text("Local journals: 324 MiB maximum plus state. Compact exports: 16 MiB. Peer cache: at most 64 MiB, including transfer staging and one prior generation. Size limits can shorten retained history. Exported archives and Trash are separate.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
+                if store.peer != nil || store.syncStatus != "Not configured" {
+                    Text("Optional sharing: \(store.syncStatus)").font(.callout).padding(.top,8)
+                }
+                if store.peer != nil {
+                    Button("Clear peer cache…") { store.manage("clear-peer-cache") }.padding(.top,10)
+                }
             }
-            Text("The other Mini is managed separately. After resuming, allow up to 60 seconds for fresh results.").font(.system(size:13)).foregroundStyle(.secondary)
+            Text("Monitoring runs independently on this Mac. After resuming, allow up to 60 seconds for fresh results.").font(.system(size:13)).foregroundStyle(.secondary)
         }.disabled(store.fixture || store.useImported || store.selectedPeer || store.managing || store.speedRunning)
     }
 }
@@ -880,7 +892,7 @@ struct DevicesView: View {
                     VStack(alignment:.leading,spacing:8) {
                         Text("Ask Dots about your network").font(.headline)
                         Text("On this Mac: “Read Network Monitor’s local briefing. Which devices need attention, and what happened in the last 24 hours?”").font(.callout).textSelection(.enabled)
-                        Text("The command reads local evidence and returns timestamped JSON. No server or router login. Dots needs local command access; the other Mini’s history remains separate.")
+                        Text("The command reads local evidence and returns timestamped JSON. No server or router login. Dots needs local command access. No other computer is required.")
                             .font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                     }
                     Spacer()
@@ -929,8 +941,8 @@ struct DevicesView: View {
 
 struct WholeHomeView: View {
     @ObservedObject var store: DashboardStore
-    var hosts: [String] { ["Mini-One", "Mini-Two"] }
-    func snapshot(_ host: String) -> DashboardSnapshot? { store.homeSnapshots.first { $0.state.host.replacingOccurrences(of:".local",with:"") == host } }
+    var hosts: [String] { store.homeSnapshots.map { $0.state.host } }
+    func snapshot(_ host: String) -> DashboardSnapshot? { store.homeSnapshots.first { $0.state.host == host } }
     func stale(_ s: DashboardSnapshot) -> Bool { s.state.stale(at:store.now) || (s.state.host == store.live?.state.host && store.paused) }
     var body: some View {
         VStack(alignment:.leading,spacing:20) {
@@ -938,7 +950,7 @@ struct WholeHomeView: View {
                 ForEach(hosts,id:\.self) { host in
                     Panel {
                         HStack { Label(host,systemImage:"macmini").font(.title3.weight(.semibold)); Spacer(); if let localHost = store.live?.state.host, snapshot(host)?.state.host == localHost { Text("This Mac").font(.system(size:13)).foregroundStyle(.secondary) } }
-                        Text(host == "Mini-One" ? "Wired observation point" : "Wi-Fi observation point").foregroundStyle(.secondary).padding(.top,5)
+                        Text(snapshot(host)?.state.path ?? "Path unavailable").foregroundStyle(.secondary).padding(.top,5)
                         if let s = snapshot(host) {
                             let old = stale(s)
                             Label(old ? "Current health unknown" : s.state.internet == 2 ? "Internet reachable" : s.state.internet == 0 ? "Internet checks failing" : "Mixed or incomplete results",systemImage:old ? "clock.badge.exclamationmark" : s.state.internet == 2 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -983,7 +995,7 @@ struct WholeHomeView: View {
     }
     var latency: some View {
         Panel {
-            Text("Response time · wired and Wi-Fi").font(.headline)
+            Text("Response time · observer comparison").font(.headline)
             Text("Cloudflare ping · milliseconds · gaps are missing or failed observations").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
             ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in store.homeSnapshots.contains { s in s.samples.contains{window.contains($0.time) && $0.cloudflare != nil} } ? nil : "No successful ping measurements in this interval" },inspect:{ time,window in
                 hosts.map { host in snapshot(host).map{pingInspection($0.samples,time:time,window:window,name:host,cloudflareOnly:true)} ?? "\(host): no evidence" }.joined(separator:"\n")
@@ -997,7 +1009,7 @@ struct WholeHomeView: View {
                         }
                     }
                 }
-            }.chartForegroundStyleScale(["Mini-One":ocean,"Mini-Two":Color.purple]).id(store.hours)
+            }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).id(store.hours)
             Text("◆ Speed-test load · Close views show original samples, normally 15 seconds apart. Zoom adds no measurements.").font(.system(size:13)).foregroundStyle(.secondary)
         }
     }
@@ -1023,7 +1035,7 @@ struct WholeHomeView: View {
     var speeds: some View {
         Panel {
             Text("Download and upload · separate measurements").font(.headline)
-            Text("Mini-One at :15 · Mini-Two at :45 · Mbps · tests are not simultaneous").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
+            Text("Mbps · separate tests at their recorded times").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
             ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in store.homeSnapshots.contains { s in s.speeds.contains{window.contains($0.time) && $0.status == "success"} } ? nil : "No successful speed tests in this interval" },inspect:{ time,window in
                 hosts.map { host in
                     guard let s=snapshot(host)?.speeds.filter({window.contains($0.time) && $0.status == "success"}).min(by:{abs($0.time-time)<abs($1.time-time)}) else { return "\(host): no successful test in this interval" }
@@ -1038,7 +1050,7 @@ struct WholeHomeView: View {
                         }
                     }
                 }
-            }.chartForegroundStyleScale(["Mini-One":ocean,"Mini-Two":Color.purple]).id(store.hours)
+            }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).id(store.hours)
         }
     }
     var incidents: some View {
@@ -1185,8 +1197,8 @@ struct InvestigationPanel: View {
     }
     var lanHelp: some View {
         VStack(alignment:.leading,spacing:10) {
-            Text("Compare Wi-Fi with the wired Mini").font(.headline)
-            Text("Use iperf3 on both Minis. Open a temporary receiver on wired Mini-One, then run one 15-second test from Mini-Two. Repeat with the reverse direction. This generates heavy LAN traffic; use it outside meetings and the :14–:20 / :44–:50 internet-test windows.")
+            Text("Optional test between computers").font(.headline)
+            Text("This optional LAN test needs a second computer with iperf3. Open a temporary receiver on the wired computer, then run one 15-second test from the other computer. Repeat with the reverse direction. Internet monitoring and speed tests do not require this setup. This generates heavy LAN traffic; use it outside meetings and the :14–:20 / :44–:50 internet-test windows.")
             Text("The receiver binds to a private LAN address, accepts one client, and closes within 60 seconds. It is not authenticated: another LAN device could connect during that window. No receiver starts from this panel.")
             Button("Open LAN-test instructions") { NSWorkspace.shared.open(programHome.appendingPathComponent("INVESTIGATIONS.md")) }
             Text("The step-by-step commands use each Mini’s current LAN address. Saved results will appear here on the initiating Mini; export its snapshot to compare elsewhere.").foregroundStyle(.secondary)

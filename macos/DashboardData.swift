@@ -37,7 +37,7 @@ struct CheckEvidence: Codable, Identifiable {
     var name: String { friendlyCheck(id) }
 }
 func friendlyCheck(_ id: String) -> String {
-    let names = ["orbi": "Main Orbi", "gateway": "AT&T gateway", "cloudflare": "Cloudflare", "google": "Google", "system": "Mac resolver", "peer": "Other Mini", "satellite_1": "Satellite 1", "satellite_2": "Satellite 2"]
+    let names = ["orbi": "Main Orbi", "gateway": "AT&T gateway", "cloudflare": "Cloudflare", "google": "Google", "system": "Mac resolver", "peer": "Other computer", "satellite_1": "Satellite 1", "satellite_2": "Satellite 2"]
     for suffix in ["_icmp", "_tcp", "_dns", "_https", "_identity"] where id.hasSuffix(suffix) {
         let prefix = String(id.dropLast(suffix.count))
         let method = ["_icmp":"ping", "_tcp":"connection", "_dns":"DNS", "_https":"fresh HTTPS", "_identity":"identity"][suffix]!
@@ -198,8 +198,13 @@ struct CurrentEvidence: Codable {
     }
 }
 
-let laneNames = ["Internet HTTPS", "Main Orbi", "AT&T gateway", "DNS resolution", "Satellite 1", "Satellite 2", "Other Mini"]
+let laneNames = ["Internet HTTPS", "Main Orbi", "AT&T gateway", "DNS resolution", "Satellite 1", "Satellite 2", "Other computer"]
 let laneIDs = [["cloudflare_https", "google_https"], ["orbi_icmp", "orbi_tcp"], ["gateway_icmp", "gateway_tcp"], ["system_dns", "orbi_dns", "cloudflare_dns", "google_dns"], ["satellite_1_icmp", "satellite_1_tcp", "satellite_1_identity"], ["satellite_2_icmp", "satellite_2_tcp", "satellite_2_identity"], ["peer_icmp"]]
+
+func configuredLaneIndices(_ checks: [CheckEvidence]) -> [Int] {
+    let ids = Set(checks.map(\.id))
+    return laneIDs.indices.filter { index in index < 4 || laneIDs[index].contains { ids.contains($0) } }
+}
 
 func groupStatus(_ checks: [CheckEvidence], ids: [String]) -> Int {
     let found = checks.filter { ids.contains($0.id) }

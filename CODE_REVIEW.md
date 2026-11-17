@@ -28,3 +28,10 @@ Architectural limits: each Mac must be logged in; clean public probes do not cle
 - Public tracked-source scan found no original household inventory values. Release history must start from sanitized files; pre-release history remains private.
 
 Light-mode colors are implemented with native appearance-aware values; this review did not change the user's system appearance. Actual reboot recovery and cross-Mac synchronization require separate [deployment tests](DEPLOYMENT.md); neither is implied by passing offline tests. This report records the 2.6.0 review, not a live health report for an installed network.
+
+
+## 2.6.1 single-computer follow-up
+
+The default configuration now omits the optional peer probe. Explicit peer settings survive upgrades. Single-observer regression coverage checks healthy operation, internet failure/recovery, local agent queries, invalid peer values, and preservation of an existing peer. Native tests verify that unconfigured peer/satellite lanes are hidden while configured failing paths remain visible.
+
+Validation: 110 offline Python tests and the native data tests pass. The native app builds and passes local signature verification. An isolated single-computer fixture displayed 14/14 passing checks, no peer comparison controls, and only the four configured core timeline lanes. Existing live configurations were not switched to single-computer mode.

@@ -24,12 +24,12 @@ import tempfile
 import time
 import uuid
 
-VERSION = '2.6.0'
+VERSION = '2.6.1'
 BASE = Path.home() / 'Library/Application Support/NetworkMonitor'
 DATA = Path.home() / 'Library/Logs/NetworkMonitor'
 DEFAULT = dict(interval_seconds=15, timeout_seconds=3, failure_threshold=2,
                recovery_threshold=2, expected_host='Mini-One', orbi='10.0.0.1',
-               gateway='192.168.1.254', dns_name='example.com', peer='Mini-Two.local',
+               gateway='192.168.1.254', dns_name='example.com', peer='',
                satellites=[], speed_enabled=True, speed_hours=list(range(24)), speed_slot=0,
                speed_max_seconds=30)
 
@@ -88,8 +88,8 @@ def config(path):
         ipaddress.IPv4Address(c[key])
     if not isinstance(c['dns_name'], str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.-]{0,250}', c['dns_name']):
         raise ValueError('Invalid DNS name')
-    if not isinstance(c['peer'], str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.-]{0,250}', c['peer']):
-        raise ValueError('Invalid peer hostname')
+    if not isinstance(c['peer'], str) or (c['peer'] and not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9.-]{0,250}', c['peer'])):
+        raise ValueError('peer must be an empty string or a valid hostname')
     if type(c['satellites']) is not list or len(c['satellites']) > 8:
         raise ValueError('satellites must contain at most eight confirmed IPv4 addresses')
     for address in c['satellites']:
@@ -119,7 +119,8 @@ def specs(c):
                                          ('google', '8.8.8.8', 'dns.google', '/resolve')]:
         out.append(dict(id=name+'_https', kind='https', target=target, hostname=hostname,
                         path=path+'?name='+c['dns_name']+'&type=A'))
-    out.append(dict(id='peer_icmp', kind='icmp', target=c['peer']))
+    if c['peer']:
+        out.append(dict(id='peer_icmp', kind='icmp', target=c['peer']))
     for index, address in enumerate(c['satellites']):
         out.append(dict(id=f'satellite_{index+1}_icmp', kind='icmp', target=address))
         out.append(dict(id=f'satellite_{index+1}_tcp', kind='tcp', target=address, port=80))
@@ -484,7 +485,7 @@ def report(state):
              'Times are UTC; first observations bound transitions, not exact physical failure times.', '']
     lines += [f"Active route/interface: {state.get('network', {}).get('interface', 'unknown')}",
               f"Speed-test load at sample time: {state.get('speed_test_active', False)}", '']
-    lines += [f"Mesh inventory: {state.get('satellites_configured', 0)} of 2 satellite addresses configured; see README for last verified attachment/backhaul snapshot (not continuously observed).",
+    lines += [f"Mesh inventory: {state.get('satellites_configured', 0)} satellite addresses configured; attachment/backhaul is not continuously observed.",
               'Wi-Fi AP/BSSID: '+(state.get('wifi') or {}).get('bssid', 'unavailable'), '']
     for r in latest:
         lines.append(f"{r['id']:19} {'PASS' if r['ok'] else 'FAIL':4}  {str(r['latency_ms']):>9} ms  {r['detail']}")

@@ -32,7 +32,7 @@ import SwiftUI
         func command(_ title:String, _ action:Selector, _ key:String="") -> NSMenuItem {
             let item=NSMenuItem(title:title,action:action,keyEquivalent:key); item.target=self; return item
         }
-        addMenu("File", [command("Import Other Mini…",#selector(importEvidence),"o"),
+        addMenu("File", [command("Import Snapshot…",#selector(importEvidence),"o"),
                          command("Export Snapshot…",#selector(exportEvidence),"s"),
                          command("Open Local Logs",#selector(openLogs)), .separator(),
                          command("Report a Connection Problem…",#selector(reportProblem),"n")])

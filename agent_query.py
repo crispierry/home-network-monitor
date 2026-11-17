@@ -139,10 +139,10 @@ def briefing(root, hours=24, include_history=True, now=None):
         diagnostics=diagnostic_status(state.get('diagnostic_snapshot'), now),
         hypotheses=state.get('latest_hypotheses', []) if not stale else [],
         limitations=['Local outbound IPv4 observations; not whole-home coverage or camera cloud health.',
-            'Two Minis do not measure Wi-Fi speed in every room. Device ping is reachability, not throughput.',
+            'Each observer measures its own path, not Wi-Fi speed in every room. Device ping is reachability, not throughput.',
             'Attachment labels are dated inventory, not live associations. MAC matching is a guard, not authenticated identity.',
             'A local self-check does not traverse the network. No reply can mean sleep, filtering, changed IP or a fault.',
-            'Missing/stale evidence is unknown. Imported evidence and the other Mini are not automatically synchronized.',
+            'Missing/stale evidence is unknown. Imported snapshots do not update themselves; cross-computer sharing is optional.',
             'No remote alerts or per-device traffic accounting. Supplemental IPv6 and bounded route traces are context, not whole-path proof. Gateway snapshots can be unavailable during an outage.'])
     import investigation
     result['investigations'] = dict(reports=investigation.recent(root), note='Saved episodes, not current health; raw tool output is in investigations-*.jsonl. Nominal one-second close-ups may run slower on timeouts.')

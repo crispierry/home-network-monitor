@@ -17,13 +17,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('directory', type=Path)
     p.add_argument('--state', choices=('recovered', 'outage', 'stale'), default='outage')
+    p.add_argument('--single-computer', action='store_true')
     args = p.parse_args()
     root = args.directory.resolve()
     if root in (m.DATA.resolve(), m.BASE.resolve()) or root.exists():
         raise SystemExit('Use a new isolated fixture directory, never the real evidence directory.')
     root.mkdir(parents=True, mode=0o700)
     now = time.time()
-    c = {**m.DEFAULT, 'satellites': ['192.0.2.10', '192.0.2.11']}
+    c = {**m.DEFAULT, 'satellites': [] if args.single_computer else ['192.0.2.10', '192.0.2.11'], 'peer': '' if args.single_computer else 'Synthetic-Peer.local'}
     detector = m.Detector(c)
     samples, events = m.journals(root)
     for index in range(241):
@@ -43,8 +44,10 @@ def main():
         samples.append(sample)
         for event in detector.update(sample):
             events.append(event)
-    detector.state.update(network={'interface':'en0'}, speed_test_active=False, satellites_configured=2)
+    detector.state.update(network={'interface':'en0'}, speed_test_active=False, satellites_configured=len(c['satellites']))
     device_rows = [dict(id=identifier, name=name, address=f'192.0.2.{20+i}', mac=f'02:00:00:00:02:{i+1:02x}', attachment='Synthetic attachment', inventory_at='2026-01-01', note='Synthetic evidence') for i,(identifier,name) in enumerate([('mini_one','Wired observer'),('mini_two','Wireless observer'),('ring_doorbell','Doorbell'),('ring_camera','Garage camera'),('alexa','Speaker'),('google_home','Home speaker')])]
+    if args.single_computer:
+        device_rows = [row for row in device_rows if row['id'] != 'mini_two']
     detector.state['devices'] = [dict(r, observed_at=m.stamp(now-10), last_reply_at=m.stamp(now-10) if i < 4 else None,
         reply=i < 4, identity='match' if i < 4 else 'unverified', latency_ms=12 if i < 4 else None,
         is_local=i == 0, status='responding' if i < 4 else 'unknown') for i,r in enumerate(device_rows)]

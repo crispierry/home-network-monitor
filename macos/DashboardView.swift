@@ -134,7 +134,7 @@ struct DashboardView: View {
                 Divider()
                 VStack(alignment:.leading,spacing:10) {
                     SmallLabel(text:"Observation points")
-                    if store.peer != nil {
+                    if store.hasMultipleObservers {
                         Button { store.scope = "Both Minis"; store.useImported = false } label: {
                             hostRow(name:"Whole home",subtitle:"Compare observers",selected:store.wholeHome,image:"house")
                         }.buttonStyle(.plain)
@@ -142,9 +142,9 @@ struct DashboardView: View {
                     Button { store.useImported = false; store.scope = "This Mini" } label: {
                         hostRow(name:store.live?.state.host ?? "This Mac", subtitle:store.fixture ? "Synthetic test evidence" : "Local recorder", selected:!store.useImported && store.scope == "This Mini", image:"desktopcomputer")
                     }.buttonStyle(.plain)
-                    if let peer = store.peer {
+                    if let peerName = store.expectedPeer {
                         Button { store.useImported = false; store.scope = "Other Mini" } label: {
-                            hostRow(name:peer.state.host,subtitle:"Synchronized local copy",selected:store.selectedPeer,image:"desktopcomputer")
+                            hostRow(name:peerName,subtitle:store.peerSubtitle,selected:store.selectedPeer,image:"desktopcomputer")
                         }.buttonStyle(.plain)
                     }
                     if let other = store.imported {
@@ -180,6 +180,13 @@ struct DashboardView: View {
                         else if store.section == "Incidents" { IncidentList(store:store) }
                         else if store.section == "Devices" { DevicesView(store:store, state:snapshot.state) }
                         else { EvidenceView(store:store,snapshot:snapshot) }
+                    } else if store.selectedPeer {
+                        Panel {
+                            Label(store.expectedPeer ?? "Other computer",systemImage:"macmini").font(.title2)
+                            Text(store.peerSubtitle).font(.headline).padding(.top,12)
+                            Text("No synchronized evidence is available yet. Both computers record independently. Check sharing on both Macs in Monitoring & storage.").foregroundStyle(.secondary).padding(.top,8)
+                            Button("Open sharing status") { store.section = "Monitoring & storage" }.padding(.top,12)
+                        }
                     } else {
                         Panel {
                             if store.loading { ProgressView("Reading local monitoring evidence…").padding(30) }
@@ -839,7 +846,7 @@ struct MonitoringView: View {
                 Text("CPU is a recent sample; 100% means one core. RAM is resident memory. Speed tests can temporarily increase load.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,6)
                 Text("Local evidence: \(store.localBytes.map { metric($0/1048576)+" MiB" } ?? "not measured") · synchronization: \(store.syncBytes.map { metric($0/1048576)+" MiB" } ?? "not measured")").padding(.top,8)
                 Text("Local journals: 324 MiB maximum plus state. Compact exports: 16 MiB. Peer cache: at most 64 MiB, including transfer staging and one prior generation. Size limits can shorten retained history. Exported archives and Trash are separate.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
-                if store.peer != nil || store.syncStatus != "Not configured" {
+                if store.hasMultipleObservers || store.syncStatus != "Not configured" {
                     Text("Optional sharing: \(store.syncStatus)").font(.callout).padding(.top,8)
                 }
                 if store.peer != nil {
@@ -941,7 +948,7 @@ struct DevicesView: View {
 
 struct WholeHomeView: View {
     @ObservedObject var store: DashboardStore
-    var hosts: [String] { store.homeSnapshots.map { $0.state.host } }
+    var hosts: [String] { Array(Set(store.homeSnapshots.map { $0.state.host } + (store.expectedPeer.map { [$0] } ?? []))).sorted() }
     func snapshot(_ host: String) -> DashboardSnapshot? { store.homeSnapshots.first { $0.state.host == host } }
     func stale(_ s: DashboardSnapshot) -> Bool { s.state.stale(at:store.now) || (s.state.host == store.live?.state.host && store.paused) }
     var body: some View {
@@ -958,8 +965,8 @@ struct WholeHomeView: View {
                             Text("Observed \(localTime(s.state.completed,seconds:true))").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
                             Text("\(elapsed(store.now-s.state.completed)) ago · \(s.state.passing)/\(s.state.checks.count) checks passed in that sample").font(.system(size:13)).foregroundStyle(.secondary)
                         } else {
-                            Label("No synchronized evidence yet",systemImage:"clock").foregroundStyle(.secondary).padding(.top,16)
-                            Text("The other Mini keeps recording independently.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
+                            Label("Not connected · no evidence yet",systemImage:"wifi.slash").foregroundStyle(.secondary).padding(.top,16)
+                            Text("Sharing: \(store.syncStatus). Check the recorder on this Mac directly; its current health is unknown here.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,8)
                         }
                     }
                 }

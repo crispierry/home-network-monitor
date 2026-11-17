@@ -21,6 +21,9 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
         try require(loadLatency([loadedPoint,otherPoint,unknownPoint],loaded:false).median == 10,"Missing load tags are excluded from comparison")
         try require(loadLatency([loadedPoint,otherPoint],loaded:true).median == 100,"Loaded replies kept separate")
         try require(loadLatency([],loaded:true).median == nil,"No loaded evidence is unknown")
+        try require(sharingStatus(state:"connected",updated:100,lastExchange:100,now:110) == "Connected","Recent exchange is connected")
+        try require(sharingStatus(state:"connected",updated:200,lastExchange:100,now:210).hasPrefix("Disconnected"),"Fresh worker cannot hide a stale exchange")
+        try require(sharingStatus(state:"connected",updated:100,lastExchange:100,now:210) == "Sync worker not reporting","Dead worker cannot appear connected")
         let now=Date().timeIntervalSince1970
         var changedPath = point(now-15,500); changedPath.interface = "en1"
         let callSamples = [point(now-400,999),point(now-120,10),point(now-105,20),point(now-90,nil),point(now-75,100),point(now-30,300),changedPath]

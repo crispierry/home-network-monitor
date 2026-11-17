@@ -9,6 +9,16 @@ import Darwin
     @Published var scope = "This Mini"
     @Published var syncStatus = "Not configured"
     @Published var lastSync: Double?
+    private var initialScopeChosen = false
+    var expectedPeer: String? {
+        peer?.state.host ?? live?.state.checks.first(where: { $0.id == "peer_icmp" }).map { $0.target }
+    }
+    var hasMultipleObservers: Bool { expectedPeer != nil }
+    var peerSubtitle: String {
+        guard let peer = peer else { return syncStatus == "Not configured" ? "Sharing not configured" : "Not connected · awaiting data" }
+        if peer.state.stale(at:now) { return "Observation stale · health unknown" }
+        return syncStatus == "Connected" ? "Connected · recent evidence" : "Disconnected · saved evidence"
+    }
     @Published var localBytes: Double?
     @Published var syncBytes: Double?
     private let peerCache = PeerEvidenceReader()
@@ -87,10 +97,10 @@ import Darwin
             let result = Result { try reader.update() }; let count = reader.malformed
             DispatchQueue.main.async {
                 self.busy = false; self.loading = false; self.malformed = count
-                if let cached = cached { self.peer = cached }
+                self.peer = cached
                 let state = status["state"] as? String ?? "not_configured"
                 let updated = status["updated_at"] as? Double ?? 0
-                self.syncStatus = Date().timeIntervalSince1970-updated > 90 && updated > 0 ? "Sync worker not reporting" : state == "connected" ? "Connected" : state == "not_configured" ? "Not configured" : "Peer unavailable · saved data"
+                self.syncStatus = sharingStatus(state:state, updated:updated, lastExchange:status["last_sync_at"] as? Double, now:Date().timeIntervalSince1970)
                 self.lastSync = status["last_sync_at"] as? Double
                 self.localBytes = status["local_bytes"] as? Double
                 self.syncBytes = status["sync_bytes"] as? Double
@@ -102,9 +112,13 @@ import Darwin
                 } else {
                     self.resourceSummary = "Process measurements unavailable. Use Activity Monitor to inspect CPU and memory; recording works independently."
                 }
-                if self.peer == nil && (self.selectedPeer || self.wholeHome) { self.scope = "This Mini" }
                 switch result {
-                case .success(let value): self.live = value; self.error = nil
+                case .success(let value):
+                    self.live = value; self.error = nil
+                    if !self.initialScopeChosen {
+                        self.initialScopeChosen = true
+                        if self.hasMultipleObservers { self.scope = "Both Minis" }
+                    }
                 case .failure(let problem):
                     if self.paused { self.live = nil; self.error = nil } else { self.error = problem.localizedDescription }
                 }

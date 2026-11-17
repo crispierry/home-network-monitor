@@ -585,3 +585,10 @@ func inspectedSample(_ samples: [SamplePoint], at time: Double, window: ClosedRa
           abs(nearest.time-time) <= max(8,nearest.interval/2) else { return nil }
     return nearest
 }
+
+func sharingStatus(state: String, updated: Double, lastExchange: Double?, now: Double) -> String {
+    guard updated > 0, now-updated >= -5, now-updated <= 90 else { return "Sync worker not reporting" }
+    if state == "not_configured" { return "Not configured" }
+    if state == "connected", let exchange = lastExchange, now-exchange >= -5, now-exchange <= 90 { return "Connected" }
+    return "Disconnected · recording continues"
+}

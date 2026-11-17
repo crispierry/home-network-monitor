@@ -36,7 +36,7 @@ Run `python3 scripts/configure_sync.py enable` on both Macs only after approval 
 
 The worker checks every 30 seconds, with backoff after failures. Connection failure does not stop either recorder. A disposable client process has a 25-second total deadline; accepted server connections have a 20-second deadline. A LAN address change causes the listener to rebind; the client resolves the peer name again each attempt. Existing macOS firewall or Local Network permission may require user authorization; never disable the firewall to make this work.
 
-Choose **Whole home** in the native app sidebar; separate cards show each observer's health and observation time. Synchronization freshness is separate from observation freshness. `network-monitor query --all-hosts --hours 24` reads the same validated local cache without networking. ChatGPT/Dots on either Mac can run it with local command access. Closing the dashboard leaves recording and synchronization running.
+For a configured peer, the native app opens **Whole home** by default. Both expected observers remain visible before the first exchange and during disconnections. Separate cards show each observer's health and observation time; missing or stale evidence means current health is unknown. The sidebar distinguishes sharing configuration, disconnection, and stale observations. Synchronization freshness is separate from observation freshness. `network-monitor query --all-hosts --hours 24` reads the same validated local cache without networking. ChatGPT/Dots on either Mac can run it with local command access. Closing the dashboard leaves recording and synchronization running.
 
 ## Storage, deletion and recovery
 

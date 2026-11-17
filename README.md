@@ -23,13 +23,15 @@ A successful check proves only what it tested. Device replies do not prove camer
 
 ## Find internet interruptions
 
-The **Overview** starts with an **Internet access · incident timeline**. It is also at the top of **Incidents** and in the whole-home **Performance** view. Use the **Show** selector above the content to choose Mini-One, Mini-Two, or Both Minis. The sidebar provides the same choices. Selection changes the charts and counts; it does not change recording.
+The **Overview** starts with an **Internet access · incident timeline**. It is also at the top of **Incidents** and **Performance**, whether you select one Mini or both. Use the **Show** selector above the content to choose Mini-One, Mini-Two, or Both Minis. The sidebar provides the same choices. Selection changes the charts and counts; it does not change recording.
 
 Each timeline row shows sampled HTTPS reachability from that Mac: passing, mixed, failing, or no evidence. Crosses mark confirmed interruptions, so short events remain visible in a full-day view. Drag horizontally to zoom, click to inspect, or use the zoom and time-navigation buttons. **Incidents** provides expandable timing and evidence; an individual Mini also has the detailed path timeline.
 
 An interruption count requires overlapping confirmed failures to **both** public HTTPS destinations. An isolated ping, DNS, satellite, or single-destination failure remains in the detailed incident list without being counted as lost internet access. Counts are per observer and use retained incident history; do not add the two counts to estimate distinct household outages. Missing recording time remains unknown, and a recording gap makes continuity and duration uncertain. The timeline is evidence from the monitoring Macs, not proof of another device's cloud connectivity or the physical cause.
 
 Wide latency charts preserve peaks instead of drawing averages. Zoom in for individual measurements; use the performance statistics to distinguish typical latency from occasional spikes.
+
+Click a chart's series buttons to show any combination of available Minis, download/upload directions, or latency providers. Speed charts show measured dots, an optional smooth trend curve and optional dashed average lines. The numeric averages and test counts use only measured values in the visible time interval, separately for each Mini and direction. Zooming recalculates them. The curve averages up to three recent tests; it is not a measurement of speeds between tests. Missing values are excluded, and the curve breaks at failed tests, interface changes and gaps over two hours. Use **Reset** to return to the full history range.
 
 ## One computer is enough
 

@@ -25,6 +25,23 @@ func point(_ time:Double,_ value:Double?=10) -> SamplePoint {
         try require(sharingStatus(state:"connected",updated:200,lastExchange:100,now:210).hasPrefix("Disconnected"),"Fresh worker cannot hide a stale exchange")
         try require(sharingStatus(state:"connected",updated:100,lastExchange:100,now:210) == "Sync worker not reporting","Dead worker cannot appear connected")
         let now=Date().timeIntervalSince1970
+        func speed(_ offset:Double,_ down:Double?,_ up:Double?=50,_ status:String="success",_ interface:String="en0") -> SpeedPoint {
+            .init(time:now+offset,end:now+offset,status:status,down:down,up:up,idle:nil,downRPM:nil,upRPM:nil,interface:interface,reason:nil)
+        }
+        let speedRows=[speed(-4000,100),speed(-3000,200,nil),speed(-2000,300),speed(-1000,nil),speed(-500,500),speed(-100,700)]
+        let throughput=throughputSummary(speedRows,direction:"Download",window:(now-3500)...now)
+        try require(throughput.mean == 425 && throughput.points.count == 4,"Average uses only measured values in the visible interval; missing values are not zero")
+        try require(throughput.points.map(\.trend) == [200,250,500,600],"Moving average warms up and resets after missing measurements")
+        try require(throughput.points[1].segment != throughput.points[2].segment,"Trend does not bridge a missing value")
+        let upload=throughputSummary(speedRows,direction:"Upload",window:(now-3500)...now)
+        try require(upload.mean == 50 && upload.points.count == 4,"Upload is averaged independently of download availability")
+        let broken=throughputSummary([speed(-10000,10),speed(-9000,20,50,"failed"),speed(-8000,30),speed(-7000,40,50,"success","en1"),speed(-10,50,50,"success","en1")],direction:"Download",window:(now-11000)...now)
+        try require(Set(broken.points.map(\.segment)).count == 3,"Failed tests and interface changes break trend segments")
+        let sparse=throughputSummary([speed(-10000,100),speed(-1,200)],direction:"Download",window:(now-11000)...now)
+        try require(sparse.points.map(\.trend) == [100,200] && sparse.points[0].segment != sparse.points[1].segment,"A gap over two hours resets and breaks the trend")
+        try require(throughputSummary([speed(-1,0)],direction:"Download",window:(now-10)...now).mean == 0,"A measured zero is valid")
+        try require(throughputSummary([speed(-1,nil),speed(-2,Double.infinity),speed(-3,-1)],direction:"Download",window:(now-10)...now).mean == nil,"Missing and invalid throughput never fabricate an average")
+        try require(throughputSummary(speedRows,direction:"Download",window:(now-600)...now).mean == 600,"Zoom recalculates the mean from the newly visible measured tests")
         let overlap = IncidentEvidence(id:"overlap",start:now-120,recovery:now-30,uncertain:false,hypotheses:[],episodes:[
             .init(check:"cloudflare_https",start:now-120,recovery:now-45,confirmed:now-105),
             .init(check:"google_https",start:now-100,recovery:now-30,confirmed:now-85)])

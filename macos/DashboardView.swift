@@ -93,6 +93,26 @@ struct SmallLabel: View {
     let text: String
     var body: some View { Text(text.uppercased()).font(.system(size:12,weight:.semibold,design:.rounded)).tracking(1.2).foregroundStyle(.secondary) }
 }
+struct ChartSeriesButton: View {
+    let title: String
+    let selected: Bool
+    var tint: Color = ocean
+    let action: () -> Void
+    var body: some View {
+        Button(action:action) {
+            Label(title,systemImage:selected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size:13,weight:.medium)).foregroundStyle(selected ? tint : .secondary)
+                .padding(.horizontal,12).frame(minHeight:44)
+                .background(selected ? tint.opacity(0.1) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:9))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityValue(selected ? "Shown" : "Hidden")
+            .accessibilityHint("Toggle this chart series; other selections stay unchanged")
+            .help("Click to show or hide \(title)")
+    }
+}
+func toggleSeries(_ value:String, hidden:inout Set<String>) {
+    if hidden.contains(value) { hidden.remove(value) } else { hidden.insert(value) }
+}
 struct StatCard: View {
     var title: String; var value: String; var unit: String; var detail: String; var icon: String; var tint: Color = ocean
     var body: some View {
@@ -488,6 +508,7 @@ struct ZoomableTimeChart<Marks: ChartContent>: View {
     let bounds: ClosedRange<Double>
     var height: CGFloat = 220
     var emptyMessage: (ClosedRange<Double>)->String? = { _ in nil }
+    var windowChanged: (ClosedRange<Double>)->Void = { _ in }
     let inspect: (Double, ClosedRange<Double>) -> String
     @ChartContentBuilder var marks: (ClosedRange<Double>) -> Marks
     @State private var focused: ClosedRange<Double>?
@@ -537,6 +558,7 @@ struct ZoomableTimeChart<Marks: ChartContent>: View {
             Text(selected.map{inspect($0,window)} ?? "Drag across a time range to zoom. Click to inspect; use the buttons to zoom or move through time.")
                 .font(.system(size:13)).foregroundStyle(.secondary).frame(minHeight:34,alignment:.topLeading).fixedSize(horizontal:false,vertical:true)
         }
+        .onChange(of:window,initial:true) { _, next in windowChanged(next) }
     }
     var navigation: some View {
         HStack(spacing:6) {
@@ -598,30 +620,38 @@ struct TimeChartGesture: View {
         .accessibilityLabel("Interactive chart. Drag horizontally to zoom, or click to inspect. Zoom and navigation buttons are above the chart.")
     }
 }
-func pingInspection(_ samples:[SamplePoint],time:Double,window:ClosedRange<Double>,name:String,cloudflareOnly:Bool=false) -> String {
+func pingInspection(_ samples:[SamplePoint],time:Double,window:ClosedRange<Double>,name:String,cloudflareOnly:Bool=false,hiddenProviders:Set<String>=[]) -> String {
+    if hiddenProviders.count == 2 { return "Choose a provider above." }
     guard let s=inspectedSample(samples,at:time,window:window) else { return "\(name): no sample near this time" }
-    let first=s.cloudflare.map{"\(metric($0)) ms"} ?? "no reply"
-    let second=cloudflareOnly ? "" : " · Google \(s.google.map{"\(metric($0)) ms"} ?? "no reply")"
-    return "\(name) · \(localTime(s.time,seconds:true)) · \(cloudflareOnly ? "" : "Cloudflare ")\(first)\(second)\(s.loaded ? " · speed-test load" : "")"
+    var values=[String]()
+    if !hiddenProviders.contains("Cloudflare") { values.append("Cloudflare "+(s.cloudflare.map { metric($0)+" ms" } ?? "no reply")) }
+    if !cloudflareOnly && !hiddenProviders.contains("Google") { values.append("Google "+(s.google.map { metric($0)+" ms" } ?? "no reply")) }
+    return "\(name) · \(localTime(s.time,seconds:true)) · \(values.joined(separator:" · "))\(s.loaded ? " · speed-test load" : "")"
 }
 
 struct LatencyPanel: View {
     @ObservedObject var store: DashboardStore
     @Binding var compare: Bool
+    @State private var hiddenProviders = Set<String>()
     func points(_ window:ClosedRange<Double>) -> [LatencyPoint] {
         var points=latencyPoints(samples:store.samples,window:window)
         if compare, !store.useImported, let peer=store.imported {
             points += latencyPoints(samples:peer.samples,window:window).map { var p=$0; p.series="\(peer.state.host) · \(p.series)"; return p }
         }
-        return points
+        return points.filter { point in !hiddenProviders.contains(where: { point.series.hasSuffix($0) }) }
     }
     var body: some View {
         Panel {
             HStack { Text("Internet response time").font(.headline); Spacer(); Text("Lower is better").font(.system(size:13)).foregroundStyle(.secondary) }
             Text("Public ping latency · milliseconds · gaps are failed or missing checks").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
-            ZoomableTimeChart(bounds:store.chartStart...store.chartEnd,emptyMessage:{ points($0).isEmpty ? "No successful ping measurements in this interval" : nil },inspect:{ time,window in
-                var detail=pingInspection(store.samples,time:time,window:window,name:store.snapshot?.state.host ?? "This Mini")
-                if compare, !store.useImported, let peer=store.imported { detail += "\n"+pingInspection(peer.samples,time:time,window:window,name:peer.state.host) }
+            HStack(spacing:8) {
+                ForEach(["Cloudflare","Google"],id:\.self) { name in
+                    ChartSeriesButton(title:name,selected:!hiddenProviders.contains(name)) { toggleSeries(name,hidden:&hiddenProviders) }
+                }
+            }.padding(.top,10)
+            ZoomableTimeChart(bounds:store.chartStart...store.chartEnd,emptyMessage:{ hiddenProviders.count == 2 ? "Choose a provider above." : points($0).isEmpty ? "No successful ping measurements in this interval" : nil },inspect:{ time,window in
+                var detail=pingInspection(store.samples,time:time,window:window,name:store.snapshot?.state.host ?? "This Mini",hiddenProviders:hiddenProviders)
+                if compare, !store.useImported, let peer=store.imported { detail += "\n"+pingInspection(peer.samples,time:time,window:window,name:peer.state.host,hiddenProviders:hiddenProviders) }
                 return detail
             }) { window in
                 ForEach(points(window)) { p in
@@ -639,24 +669,114 @@ struct LatencyPanel: View {
 }
 func emptyChart(_ text:String) -> some View { VStack(spacing:10){ Image(systemName:"chart.xyaxis.line").font(.largeTitle).foregroundStyle(.tertiary); Text(text).font(.system(size:13)).foregroundStyle(.secondary).multilineTextAlignment(.center) }.frame(maxWidth:.infinity).frame(height:230) }
 
+struct SpeedChartSeries: Identifiable {
+    let host: String
+    let direction: String
+    let color: Color
+    let summary: ThroughputSummary
+    var id: String { host+" · "+direction }
+}
 struct SpeedPanel: View {
     @ObservedObject var store: DashboardStore
-    var speeds: [SpeedPoint] { store.snapshot?.speeds.filter { $0.time>=store.start && $0.time<=store.reference && $0.status=="success" } ?? [] }
+    @State private var hiddenHosts = Set<String>()
+    @State private var hiddenDirections = Set<String>()
+    @State private var showTrend = true
+    @State private var showAverage = true
+    @State private var visibleWindow: ClosedRange<Double>?
+    let directions = ["Download","Upload"]
+    var snapshots: [DashboardSnapshot] { store.wholeHome ? store.homeSnapshots : [store.snapshot].compactMap { $0 } }
+    var hosts: [String] {
+        store.wholeHome ? Array(Set(snapshots.map { $0.state.host } + (store.expectedPeer.map { [$0] } ?? []))).sorted() : snapshots.map { $0.state.host }
+    }
+    var bounds: ClosedRange<Double> { store.start...store.reference }
+    var window: ClosedRange<Double> { visibleWindow.map { ChartWindow.fit($0,inside:bounds) } ?? bounds }
+    func series(_ window:ClosedRange<Double>) -> [SpeedChartSeries] {
+        hosts.enumerated().flatMap { index, host in
+            directions.enumerated().compactMap { directionIndex, direction in
+                guard !hiddenHosts.contains(host), !hiddenDirections.contains(direction) else { return nil }
+                let colors: [Color] = [ocean,.indigo,.orange,.pink]
+                let speeds=snapshots.first { $0.state.host == host }?.speeds ?? []
+                return SpeedChartSeries(host:host,direction:direction,color:colors[(index*2+directionIndex)%colors.count],summary:throughputSummary(speeds,direction:direction,window:window))
+            }
+        }
+    }
+    func inspect(_ time:Double, _ window:ClosedRange<Double>) -> String {
+        let selected=series(window)
+        if selected.isEmpty { return "Choose a Mini and a direction above to show measurements." }
+        return selected.map { row in
+            guard let point=row.summary.points.min(by:{abs($0.time-time)<abs($1.time-time)}) else { return row.id+": no measurement in this interval" }
+            return "\(row.id) · nearest measured test \(localTime(point.time,seconds:true)) · \(metric(point.value)) Mbps"
+        }.joined(separator:"\n")
+    }
+    var controls: some View {
+        VStack(alignment:.leading,spacing:8) {
+            if hosts.count > 1 {
+                HStack(spacing:8) {
+                    Text("Minis").font(.system(size:13)).foregroundStyle(.secondary).frame(width:65,alignment:.leading)
+                    ForEach(hosts,id:\.self) { host in
+                        ChartSeriesButton(title:observerName(host),selected:!hiddenHosts.contains(host)) { toggleSeries(host,hidden:&hiddenHosts) }
+                    }
+                }
+            }
+            HStack(spacing:8) {
+                if hosts.count > 1 { Text("Direction").font(.system(size:13)).foregroundStyle(.secondary).frame(width:65,alignment:.leading) }
+                ForEach(directions,id:\.self) { direction in
+                    ChartSeriesButton(title:direction,selected:!hiddenDirections.contains(direction)) { toggleSeries(direction,hidden:&hiddenDirections) }
+                }
+            }
+            HStack(spacing:18) {
+                Toggle("Trend curve",isOn:$showTrend)
+                Toggle("Average line",isOn:$showAverage)
+            }.toggleStyle(.checkbox).font(.system(size:13)).padding(.top,4)
+        }.padding(.top,12)
+    }
+    var averages: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text("Average measured throughput · visible interval").font(.callout.weight(.semibold))
+            LazyVGrid(columns:[GridItem(.adaptive(minimum:170),alignment:.leading)],alignment:.leading,spacing:10) {
+                ForEach(series(window)) { row in
+                    VStack(alignment:.leading,spacing:5) {
+                        Label(row.id,systemImage:row.direction == "Download" ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                            .font(.system(size:13,weight:.medium)).foregroundStyle(row.color)
+                        Text(row.summary.mean.map { metric($0)+" Mbps" } ?? "Not measured")
+                            .font(.system(size:21,weight:.semibold,design:.rounded)).monospacedDigit()
+                        Text("\(row.summary.points.count) measured tests").font(.system(size:13)).foregroundStyle(.secondary)
+                    }.frame(maxWidth:.infinity,alignment:.leading).padding(10)
+                        .background(row.color.opacity(0.06),in:RoundedRectangle(cornerRadius:9))
+                }
+            }
+        }.padding(.top,16)
+    }
     var body: some View {
         Panel {
             HStack { Text("Download & upload").font(.headline); Spacer(); Text("Mbps").font(.system(size:13)).foregroundStyle(.secondary) }
-            Text("Individual speed tests · no estimate between tests").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
-            ZoomableTimeChart(bounds:store.chartStart...store.chartEnd,emptyMessage:{ window in speeds.contains{window.contains($0.time)} ? nil : "No successful speed tests in this interval" },inspect:{ time,window in
-                guard let s=speeds.filter({window.contains($0.time)}).min(by:{abs($0.time-time)<abs($1.time-time)}) else { return "No successful speed tests in this interval" }
-                return "Nearest test · \(localTime(s.time,seconds:true)) · ↓ \(metric(s.down)) / ↑ \(metric(s.up)) Mbps · idle \(metric(s.idle)) ms"
-            }) { window in
-                ForEach(speeds.filter{window.contains($0.time)}) { s in
-                    if let value=s.down { PointMark(x:.value("Time",Date(timeIntervalSince1970:s.time)),y:.value("Mbps",value)).foregroundStyle(by:.value("Direction","Download")).symbol(by:.value("Direction","Download")).symbolSize(80) }
-                    if let value=s.up { PointMark(x:.value("Time",Date(timeIntervalSince1970:s.time)),y:.value("Mbps",value)).foregroundStyle(by:.value("Direction","Upload")).symbol(by:.value("Direction","Upload")).symbolSize(80) }
+            Text("Click series to show any combination. Each dot is a measured speed test.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,3)
+            controls
+            ZoomableTimeChart(bounds:bounds,emptyMessage:{ interval in
+                let rows=series(interval)
+                return rows.isEmpty ? "Choose a Mini and a direction above." : rows.allSatisfy { $0.summary.points.isEmpty } ? "No measured speeds in this interval" : nil
+            },windowChanged:{ visibleWindow=$0 },inspect:inspect) { interval in
+                ForEach(series(interval)) { row in
+                    ForEach(row.summary.points) { point in
+                        if showTrend {
+                            LineMark(x:.value("Time",Date(timeIntervalSince1970:point.time)),y:.value("Mbps",point.trend),series:.value("Trend segment",row.id+String(point.segment)))
+                                .foregroundStyle(row.color).interpolationMethod(.monotone).lineStyle(StrokeStyle(lineWidth:2))
+                        }
+                        PointMark(x:.value("Time",Date(timeIntervalSince1970:point.time)),y:.value("Mbps",point.value))
+                            .foregroundStyle(row.color).symbol(by:.value("Direction",row.direction)).symbolSize(65)
+                    }
+                    if showAverage, let mean=row.summary.mean {
+                        RuleMark(y:.value("Average Mbps",mean)).foregroundStyle(row.color.opacity(0.7)).lineStyle(StrokeStyle(lineWidth:1.5,dash:[5,4]))
+                    }
                 }
-            }.chartForegroundStyleScale(["Download":ocean,"Upload":Color.indigo])
-             .id("\(store.hours)-\(store.snapshot?.state.host ?? "")-\(store.useImported)")
-            HStack { Text("Scheduled tests · independent measurements").font(.system(size:13)).foregroundStyle(.secondary); Spacer(); Button(store.speedRunning ? "Testing…":"Test speed…",action:store.requestSpeed).disabled(!store.isLocal || store.speedRunning || store.currentStale || store.paused || store.managing) }.frame(minHeight:36)
+            }.chartSymbolScale(domain:directions,range:[BasicChartSymbolShape.circle,.square]).chartLegend(.hidden)
+                .id("speed-\(store.scope)-\(store.hours)-\(store.useImported)")
+            averages
+            Text("Dots: measured tests. Curve: moving average of up to 3 tests; it does not measure speeds between tests. Dashed line: arithmetic mean of visible measured values, separately per Mini and direction. Missing values are excluded. Trends break at failed tests, interface changes and gaps over 2 hours.")
+                .font(.system(size:13)).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).padding(.top,12)
+            if !store.wholeHome {
+                HStack { Text("Scheduled tests · independent measurements").font(.system(size:13)).foregroundStyle(.secondary); Spacer(); Button(store.speedRunning ? "Testing…":"Test speed…",action:store.requestSpeed).disabled(!store.isLocal || store.speedRunning || store.currentStale || store.paused || store.managing) }.frame(minHeight:36)
+            }
         }
     }
 }
@@ -1046,6 +1166,7 @@ struct DevicesView: View {
 
 struct WholeHomeView: View {
     @ObservedObject var store: DashboardStore
+    @State private var hiddenLatencyHosts = Set<String>()
     var hosts: [String] { Array(Set(store.homeSnapshots.map { $0.state.host } + (store.expectedPeer.map { [$0] } ?? []))).sorted() }
     func snapshot(_ host: String) -> DashboardSnapshot? { store.homeSnapshots.first { $0.state.host == host } }
     func stale(_ s: DashboardSnapshot) -> Bool { s.state.stale(at:store.now) || (s.state.host == store.live?.state.host && store.paused) }
@@ -1106,10 +1227,18 @@ struct WholeHomeView: View {
         Panel {
             Text("Response time · observer comparison").font(.headline)
             Text("Cloudflare ping · milliseconds · gaps are missing or failed observations").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
-            ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in store.homeSnapshots.contains { s in s.samples.contains{window.contains($0.time) && $0.cloudflare != nil} } ? nil : "No successful ping measurements in this interval" },inspect:{ time,window in
-                hosts.map { host in snapshot(host).map{pingInspection($0.samples,time:time,window:window,name:host,cloudflareOnly:true)} ?? "\(host): no evidence" }.joined(separator:"\n")
-            }) { window in
+            HStack(spacing:8) {
                 ForEach(hosts,id:\.self) { host in
+                    ChartSeriesButton(title:observerName(host),selected:!hiddenLatencyHosts.contains(host)) { toggleSeries(host,hidden:&hiddenLatencyHosts) }
+                }
+            }.padding(.top,10)
+            let selectedHosts=hosts.filter { !hiddenLatencyHosts.contains($0) }
+            ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in
+                selectedHosts.isEmpty ? "Choose a Mini above." : store.homeSnapshots.contains { s in selectedHosts.contains(s.state.host) && s.samples.contains{window.contains($0.time) && $0.cloudflare != nil} } ? nil : "No successful ping measurements in this interval"
+            },inspect:{ time,window in
+                selectedHosts.isEmpty ? "Choose a Mini above." : selectedHosts.map { host in snapshot(host).map{pingInspection($0.samples,time:time,window:window,name:host,cloudflareOnly:true)} ?? "\(host): no evidence" }.joined(separator:"\n")
+            }) { window in
+                ForEach(selectedHosts,id:\.self) { host in
                     if let s=snapshot(host) {
                         ForEach(latencyPoints(samples:s.samples,window:window).filter{$0.series == "Cloudflare"}) { p in
                             LineMark(x:.value("Time",Date(timeIntervalSince1970:p.time)),y:.value("Milliseconds",p.value),series:.value("Segment",host+String(p.segment))).foregroundStyle(by:.value("Observer",host))
@@ -1141,27 +1270,7 @@ struct WholeHomeView: View {
             }
         }
     }
-    var speeds: some View {
-        Panel {
-            Text("Download and upload · separate measurements").font(.headline)
-            Text("Mbps · separate tests at their recorded times").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,5)
-            ZoomableTimeChart(bounds:store.start...store.now,emptyMessage:{ window in store.homeSnapshots.contains { s in s.speeds.contains{window.contains($0.time) && $0.status == "success"} } ? nil : "No successful speed tests in this interval" },inspect:{ time,window in
-                hosts.map { host in
-                    guard let s=snapshot(host)?.speeds.filter({window.contains($0.time) && $0.status == "success"}).min(by:{abs($0.time-time)<abs($1.time-time)}) else { return "\(host): no successful test in this interval" }
-                    return "\(host) · nearest test \(localTime(s.time,seconds:true)) · ↓ \(metric(s.down)) / ↑ \(metric(s.up)) Mbps"
-                }.joined(separator:"\n")
-            }) { window in
-                ForEach(hosts,id:\.self) { host in
-                    if let s = snapshot(host) {
-                        ForEach(s.speeds.filter{window.contains($0.time) && $0.status == "success"}) { p in
-                            if let down=p.down { PointMark(x:.value("Time",Date(timeIntervalSince1970:p.time)),y:.value("Mbps",down)).foregroundStyle(by:.value("Observer",host)).symbol(by:.value("Direction","Download")).symbolSize(60) }
-                            if let up=p.up { PointMark(x:.value("Time",Date(timeIntervalSince1970:p.time)),y:.value("Mbps",up)).foregroundStyle(by:.value("Observer",host)).symbol(by:.value("Direction","Upload")).symbolSize(60) }
-                        }
-                    }
-                }
-            }.chartForegroundStyleScale(domain:hosts,range:[ocean,Color.purple]).id(store.hours)
-        }
-    }
+    var speeds: some View { SpeedPanel(store:store) }
     var incidents: some View {
         Panel {
             Text("Incidents by observation point").font(.headline)

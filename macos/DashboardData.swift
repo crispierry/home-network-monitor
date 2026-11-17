@@ -342,6 +342,35 @@ struct SpeedPoint: Codable, Identifiable {
                      interface: raw["requested_interface"] as? String ?? "unknown", reason: raw["reason"] as? String)
     }
 }
+struct ThroughputPoint: Identifiable {
+    let id: Int
+    let time: Double
+    let value: Double
+    let trend: Double
+    let segment: Int
+}
+struct ThroughputSummary {
+    let points: [ThroughputPoint]
+    var mean: Double? { points.isEmpty ? nil : points.reduce(0) { $0+$1.value/Double(points.count) } }
+}
+func throughputSummary(_ speeds: [SpeedPoint], direction: String, window: ClosedRange<Double>) -> ThroughputSummary {
+    var points=[ThroughputPoint](), recent=[Double](), previous: SpeedPoint?, segment=0
+    for (index,speed) in speeds.filter({ window.contains($0.time) }).sorted(by: { $0.time < $1.time }).enumerated() {
+        let value=direction == "Download" ? speed.down : speed.up
+        guard speed.status == "success", let value=value, value.isFinite, value >= 0 else {
+            recent=[]; previous=nil; segment += 1; continue
+        }
+        if let prior=previous, speed.time-prior.time > 7200 || speed.interface != prior.interface {
+            recent=[]; segment += 1
+        }
+        recent.append(value)
+        if recent.count > 3 { recent.removeFirst() }
+        let trend=recent.reduce(0) { $0+$1/Double(recent.count) }
+        points.append(.init(id:index,time:speed.time,value:value,trend:trend,segment:segment))
+        previous=speed
+    }
+    return ThroughputSummary(points:points)
+}
 struct UserObservation: Codable, Identifiable {
     var id: String = UUID().uuidString
     var time: Double

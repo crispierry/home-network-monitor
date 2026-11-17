@@ -31,27 +31,41 @@ func throughput(_ value: Double?) -> (String,String) {
 func metric(_ value: Double?, digits: Int = 1) -> String { value.map { String(format:"%.*f",digits,$0) } ?? "—" }
 
 
-struct ComfortableDisclosureStyle: DisclosureGroupStyle {
-    func makeBody(configuration: Configuration) -> some View {
+struct ExpandableSection<Content:View,Label:View>: View {
+    let content: Content
+    let label: Label
+    @State private var isExpanded = false
+    @State private var hovering = false
+    init(_ title:String,@ViewBuilder content:()->Content) where Label == Text {
+        self.content=content(); self.label=Text(title)
+    }
+    init(@ViewBuilder content:()->Content,@ViewBuilder label:()->Label) {
+        self.content=content(); self.label=label()
+    }
+    var body: some View {
         VStack(alignment:.leading,spacing:0) {
             Button {
-                withAnimation(.easeInOut(duration:0.16)) { configuration.isExpanded.toggle() }
+                withAnimation(.easeInOut(duration:0.16)) { isExpanded.toggle() }
             } label: {
                 HStack(spacing:12) {
-                    configuration.label
+                    label.font(.callout.weight(.medium)).multilineTextAlignment(.leading)
                     Spacer(minLength:8)
-                    Image(systemName:configuration.isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size:12,weight:.semibold)).foregroundStyle(.secondary)
+                    Text(isExpanded ? "Hide details" : "Show details")
+                        .font(.system(size:13,weight:.medium)).foregroundStyle(ocean).fixedSize().accessibilityHidden(true)
+                    Image(systemName:isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size:12,weight:.semibold)).foregroundStyle(ocean).accessibilityHidden(true)
                 }
                 .frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
                 .padding(.horizontal,12)
-                .background(Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:8))
+                .background(Color.primary.opacity(hovering ? 0.08 : isExpanded ? 0.055 : 0.035),in:RoundedRectangle(cornerRadius:8))
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
-             .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
-             .accessibilityHint("Show or hide details")
-            if configuration.isExpanded { configuration.content.padding(.horizontal,12).padding(.bottom,8) }
-        }
+                .onHover { hovering=$0 }
+                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                .accessibilityHint("Activate anywhere on this row to show or hide details")
+                .help(isExpanded ? "Click anywhere on this row to collapse details" : "Click anywhere on this row to expand details")
+            if isExpanded { content.padding(.horizontal,12).padding(.top,8).padding(.bottom,8) }
+        }.frame(maxWidth:.infinity,alignment:.leading)
     }
 }
 var dashboardVersion: String {
@@ -244,7 +258,6 @@ struct DashboardView: View {
         .frame(minWidth:1000,minHeight:700)
         .tint(ocean)
         .controlSize(.large)
-        .disclosureGroupStyle(ComfortableDisclosureStyle())
         .environment(\.timeZone,TimeZone(identifier:"America/Los_Angeles")!)
         .sheet(isPresented:$store.showObservation) { ObservationSheet(store:store) }
         .alert("Network Monitor",isPresented:Binding(get:{store.message != nil},set:{if !$0 {store.message=nil}})) { Button("OK") { store.message=nil } } message: { Text(store.message ?? "") }
@@ -438,11 +451,11 @@ struct PerformanceView: View {
                 LatencyPanel(store:store,compare:$compare).frame(maxWidth:.infinity)
                 SpeedPanel(store:store).frame(maxWidth:.infinity)
             }
-            DisclosureGroup("Investigations and computer details") {
+            ExpandableSection("Investigations and computer details") {
             ObserverContextPanel(host:store.snapshot?.state.host ?? "This Mac", context:store.snapshot?.state.diagnostics?.hostContext, now:store.reference)
             InvestigationPanel(store:store)
             LoadComparisonPanel(samples:store.samples.filter { $0.time >= store.start && $0.time <= store.reference })
-            }.disclosureGroupStyle(ComfortableDisclosureStyle())
+            }
             Panel {
                 Text("Separate the Mac, Wi-Fi and shared internet path").font(.headline)
                 Text("Start with this Mac’s router, internet and computer measurements at the exact meeting time. A second observer is optional; its overlapping results can help separate local and shared problems.").font(.callout).foregroundStyle(.secondary).padding(.top,8)
@@ -836,7 +849,7 @@ struct InternetIncidentPanel: View {
                 ForEach(hosts,id:\.self) { host in
                     let events=interruptions(host)
                     ForEach(events) { event in
-                        DisclosureGroup {
+                        ExpandableSection {
                             Text(event.uncertain ? "A recording gap overlaps this incident; its continuous duration is unknown." : "Both destinations had overlapping confirmed failures. This does not identify the failing equipment.").font(.callout).foregroundStyle(.secondary)
                             if let incident=snapshot(host)?.state.incidents.first(where: { $0.id == event.incidentID }) {
                                 IncidentCard(incident:incident,reference:store.reference).padding(.top,8)
@@ -936,7 +949,7 @@ struct IncidentCard: View {
             }
             if incident.commissioning { Text("Recorded while granting the monitor permission during installation. Do not count this as an established router or internet outage.").font(.system(size:13)).foregroundStyle(.secondary).padding(.top,9) }
             if incident.uncertain { Label("Monitoring gap overlaps this incident; continuity and duration are uncertain.",systemImage:"clock.badge.exclamationmark").font(.system(size:13)).foregroundStyle(amber).padding(.top,9) }
-            DisclosureGroup("\(incident.episodes.count) affected checks · inspect timing") {
+            ExpandableSection("\(incident.episodes.count) affected checks") {
                 Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:9) {
                     GridRow { Text("Check").bold(); Text("First failed").bold(); Text("First recovered").bold() }.foregroundStyle(.secondary)
                     ForEach(incident.episodes) { e in GridRow { Text(friendlyCheck(e.check)); Text(localTime(e.start,seconds:true)); Text(e.recovery.map{localTime($0,seconds:true)} ?? "Not yet") } }
@@ -1129,7 +1142,7 @@ struct DevicesView: View {
         let status = stale ? "stale" : device.status
         let labels = ["responding":"Reply received", "address_reply":"Address replies", "recovering":"Recovering", "unreachable":"No reply", "checking":"Checking", "unknown":"Not yet verified", "address_changed":"Check address", "stale":"No fresh evidence"]
         let tint: Color = status == "responding" ? mint : ["checking","recovering","unreachable","address_changed"].contains(status) ? amber : .secondary
-        return DisclosureGroup {
+        return ExpandableSection {
             VStack(alignment:.leading,spacing:8) {
                 Text(device.lastReply.map { "Last reply · \(localTime($0,seconds:true))" } ?? "No reply recorded yet")
                 if !stale && device.identity == "unverified" { Text("Device identity unverified · monitoring the recorded IP address") }
@@ -1277,7 +1290,7 @@ struct WholeHomeView: View {
                     let rows = s.state.incidents.filter{($0.recovery ?? store.now) >= store.start && $0.start <= store.now}
                     if rows.isEmpty { Text("No confirmed incidents in retained evidence for this period.").font(.callout).foregroundStyle(.secondary).padding(.top,6) }
                     ForEach(rows) { incident in
-                        DisclosureGroup {
+                        ExpandableSection {
                             ForEach(incident.hypotheses,id:\.self) { Text($0).font(.callout).foregroundStyle(.secondary).padding(.top,6) }
                             ForEach(incident.episodes) { e in Text("\(friendlyCheck(e.check)) · \(localTime(e.start,seconds:true)) → \(e.recovery.map{localTime($0,seconds:true)} ?? "recovery not observed")").font(.system(size:13)).padding(.top,5) }
                         } label: {
@@ -1356,7 +1369,7 @@ struct InvestigationPanel: View {
                 Text("\(report.host) · \(localTime(report.time,seconds:true))–\(localTime(report.end,seconds:true)) · \(report.reason)")
                     .font(.system(size:13)).foregroundStyle(.secondary).textSelection(.enabled).padding(.top,4)
                 if !report.points.isEmpty { episodeChart(report).padding(.top,14) }
-                DisclosureGroup("How to read this capture") {
+                ExpandableSection("How to read this capture") {
                     VStack(alignment:.leading,spacing:8) { ForEach(report.details,id:\.self) { Text($0).font(.callout).foregroundStyle(.secondary) } }.padding(.top,8).frame(maxWidth:.infinity,alignment:.leading)
                 }.padding(.top,12)
                 HStack {

@@ -127,6 +127,8 @@ Tests consume bandwidth and can affect calls. Reduce the schedule when the inves
 | **Evidence** | Raw logs and snapshot export |
 | **Monitoring & storage** | Resource/storage information, stop/resume, and history deletion |
 
+Click anywhere on an expandable row to open or close its details, including the label and blank space. **Show details** changes to **Hide details** when open. This also applies to **Affected checks** inside an incident.
+
 For a short stall, expand **Performance → Investigations and computer details** and use **Connection investigation**. See [INVESTIGATIONS.md](INVESTIGATIONS.md) for captures, route inspection, and optional iperf3 tests.
 
 Use your existing authenticated remote desktop connection to view the app remotely. For an offline comparison, choose **Evidence → Export snapshot…** on one Mac, transfer the file privately, and use **Import snapshot…** on the other. Snapshots contain private network evidence and do not update themselves. Optional encrypted sharing requires separate [pairing and verification](SYNC_SETUP.md); it is disabled by default. Do not port-forward the app.

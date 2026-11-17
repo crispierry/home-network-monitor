@@ -2,15 +2,38 @@
 
 The recorder is authoritative; the dashboard and optional synchronization worker are readers. Each observer writes its own evidence independently, so a network outage does not interrupt local persistence. There is no database server or cloud control plane.
 
-`monitor.py` validates configuration, runs bounded probes in a limited thread pool, maintains the incident detector and writes rotating journals plus an atomic checkpoint. `devices.py` maintains a small explicit watch list. `diagnostics.py` and `host_metrics.py` collect supplemental context with independent timestamps and failure handling. `performance.py` serializes load tests and schedules them by observer slot. `investigation.py` runs bounded close-ups and optional command-line tools; its failure does not stop primary collection.
+## Components and data flow
 
-`analysis.py` and `agent_query.py` provide read-only summaries. `manage.py` installs and controls the per-user LaunchAgent while preserving installed private settings. The native dashboard separates evidence decoding/validation (`DashboardData.swift`), background loading and actions (`DashboardStore.swift`), views, and the AppKit entry point. File parsing runs off the main thread. Incremental journal offsets avoid repeated full-history reads; rotation removes old offsets. Explicit gaps prevent charts from implying continuous coverage.
+| Component | Responsibility |
+| --- | --- |
+| `monitor.py` | Validate configuration, run probes in a limited thread pool, detect incidents, and write journals/checkpoints |
+| `devices.py` | Track a small, explicitly configured device list |
+| `diagnostics.py`, `host_metrics.py` | Collect supplemental context with separate timestamps and failure handling |
+| `performance.py` | Schedule and serialize load tests by observer slot |
+| `investigation.py` | Run bounded close-ups and optional command-line tools without stopping primary collection on failure |
+| `analysis.py`, `agent_query.py` | Produce read-only summaries of saved evidence |
+| `manage.py` | Install/control per-user jobs while preserving private settings |
+| `macos/DashboardData.swift` | Decode and validate evidence |
+| `macos/DashboardStore.swift` | Load data in the background and handle user actions |
+| `macos/DashboardView.swift`, `macos/NetworkMonitorApp.swift` | Present the native interface and start the application |
+| `sync.py`, `peer_transport.py` | Produce/validate compact summaries and optionally transfer them using mutually authenticated TLS |
 
-`sync.py` produces compact summaries and validates peer generations. `peer_transport.py` implements an opt-in mutually authenticated TLS transport. Raw logs stay on their source observer. Sharing is not needed for local recording, and a failed transfer preserves the last good cache. Peer capture age is distinct from transfer age. The current transport is restricted to its documented two-observer profile; general discovery and automatic pairing are not implemented.
+The recorder writes locally even when network checks fail. The dashboard loads files off the main thread; incremental offsets avoid rereading the full journal on every refresh. Rotation removes old offsets, and explicit gaps prevent charts from implying continuous coverage.
+
+Raw logs remain on their source observer. Optional sharing transfers compact summaries; a failed transfer preserves the last valid cache. The time the peer observed a result is distinct from the time that result arrived. The transport supports only the [documented two-observer profile](SYNC_SETUP.md); general discovery and automatic pairing are not implemented.
 
 ## Bounds and failure isolation
 
-Primary sample segments: 32 × 8 MiB. Events: 16 × 1 MiB. Speeds: 8 × 1 MiB. Observations: 4 × 1 MiB. Diagnostics: 16 × 2 MiB. Investigations: 4 × 2 MiB. Retention ages can shorten those size ceilings. Journals use writer locks, flush/fsync, bounded records and torn-tail recovery. Checkpoint writes use unique owner-only temporary files followed by atomic replacement. Configuration, cache and imported evidence have size/shape limits.
+| Journal | Segment budget |
+| --- | --- |
+| Primary samples | 32 × 8 MiB |
+| Events | 16 × 1 MiB |
+| Speed tests | 8 × 1 MiB |
+| Human observations | 4 × 1 MiB |
+| Diagnostics | 16 × 2 MiB |
+| Investigations | 4 × 2 MiB |
+
+[Age limits](README.md#storage-and-retention) can shorten these size ceilings. Journals use writer locks, flush/fsync, bounded records and torn-tail recovery. Checkpoint writes use unique owner-only temporary files followed by atomic replacement. Configuration, cache and imported evidence have size/shape limits.
 
 The dashboard retains seven days of compact samples and 180 days of speed/observation records, pruning even when monitoring stops. UI refresh is five seconds and slows while hidden. Import size and record-count limits bound accidental memory use. Summary transfer has byte/count limits and deadlines. Backups and user exports are intentional separate files, not subject to automatic deletion.
 

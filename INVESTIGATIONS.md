@@ -1,6 +1,6 @@
 # Connection investigations — version 2.6.0
 
-Open **Performance → Connection investigation**. The panel names the observing Mini. Reports describe saved episodes, not current health. Whole home's panel uses this Mac's local report; choose an imported snapshot to inspect exported reports from the other Mini. Automatic sharing of investigation reports is not implemented.
+Open **Performance**, expand **Investigations and computer details**, then find **Connection investigation**. The panel names the observing Mini. Reports describe saved episodes, not current health. Whole home's panel uses this Mac's local report; choose an imported snapshot to inspect exported reports from the other Mini. Automatic sharing of investigation reports is not implemented.
 
 ## Catch a short stall
 
@@ -10,9 +10,9 @@ Choose a path and enable **15-second detail**. Move the Earlier/Later slider and
 
 The recorder automatically requests a close-up after a newly failing primary check, or a new successful Orbi ping above 30 ms / public ping above 150 ms. These thresholds trigger investigation, not incident diagnoses. At most one automatic capture starts per five minutes; an ongoing investigation takes precedence and requests are not queued. A report cannot reconstruct the time before its trigger. Continuous 15-second, multi-protocol recording remains independent.
 
-## Latency during the hourly speed tests
+## Latency during scheduled speed tests
 
-An available diagnostic worker captures a five-second before period, about one ping round per second during the already scheduled internet test, and five seconds afterward. Reports separate target, phase and interface. The :15 / :45 speed schedule remains unchanged. These small probes add no separate bandwidth test.
+An available diagnostic worker captures a five-second before period, about one ping round per second during the already scheduled internet test, and five seconds afterward. Reports separate target, phase and interface. Tests use the configured hours and observer slot (:15 or :45); captures do not change that schedule. These small probes add no separate bandwidth test.
 
 The before period is not guaranteed idle: other devices may be busy. The during period combines networkQuality's download and upload work. The phase label is taken when a probe round begins, so a reply can arrive after a phase boundary. Interface changes make the report incomplete. This is inspired by Flent's simultaneous latency/load methodology; it is not RRUL, Zoom jitter, or a causal bufferbloat score. An unavailable/busy diagnostic worker does not prevent the scheduled speed test; its absence is noted in the speed record.
 

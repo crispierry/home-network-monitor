@@ -1,6 +1,6 @@
 # Comparative scope
 
-Network Monitor is a small local recorder for evidence during intermittent outages. It borrows established diagnostic approaches, with attribution in ACKNOWLEDGMENTS.md, rather than trying to replace enterprise monitoring suites.
+Network Monitor is a small local recorder for evidence during intermittent outages. It borrows established diagnostic approaches, with attribution in [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), rather than trying to replace enterprise monitoring suites.
 
 SmokePing motivates latency distributions, loss denominators and multiple observers. iperf3 supplies a separately installed controlled LAN test. MTR supplies an optional repeated-route engine, with macOS traceroute fallback. Flent motivates measuring latency alongside deliberate load; our before/during/after networkQuality observations are not RRUL or a bufferbloat score.
 

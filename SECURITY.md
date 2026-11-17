@@ -1,6 +1,6 @@
 # Security
 
-Report vulnerabilities through the repository's private security reporting feature when available, or contact the maintainer privately. Do not attach household logs, keys or credentials to a public issue. Include affected version, reproduction with synthetic data, impact and suggested mitigation.
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/crispierry/home-network-monitor/security/advisories/new). If that feature is unavailable, contact the maintainer privately. Do not attach household logs, keys or credentials to a public issue. Include affected version, reproduction with synthetic data, impact and suggested mitigation.
 
 ## Trust boundary
 

@@ -1,0 +1,19 @@
+{
+  "interval_seconds": 15,
+  "timeout_seconds": 3,
+  "failure_threshold": 2,
+  "recovery_threshold": 2,
+  "expected_host": "Observer-One",
+  "orbi": "192.0.2.1",
+  "gateway": "192.0.2.254",
+  "dns_name": "example.com",
+  "peer": "Observer-Two.local",
+  "satellites": [],
+  "speed_enabled": false,
+  "speed_hours": [
+    9,
+    21
+  ],
+  "speed_slot": 0,
+  "speed_max_seconds": 30
+}

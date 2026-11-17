@@ -1,0 +1,45 @@
+name: Network incident
+description: Record a selective outage or performance problem with time-linked evidence.
+title: "[Incident] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep passwords, tokens, account details, and unredacted logs out of this report.
+        Do not attach the Orbi Home dashboard: it displays Wi-Fi credentials.
+        Preserve original evidence locally; include only relevant redacted summaries here.
+  - type: input
+    id: time
+    attributes:
+      label: Time and timezone
+      description: First observed failure and recovery time, if known. Distinguish observed times from monitor timestamps.
+      placeholder: "2026-11-16 15:20 America/Los_Angeles; recovered at 15:25"
+    validations:
+      required: true
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected and unaffected devices
+      description: Identify failed services, remote-only versus local failure, and devices that could still start fresh internet activity.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Monitor evidence
+      description: Summarize both Minis' checks, route/interface, observation gaps, incident timestamps, and speed-test activity. Missing evidence is not success.
+  - type: textarea
+    id: topology
+    attributes:
+      label: Attachment and backhaul observations
+      description: Include observation time, which Orbi served each target device, satellite status, and whether this was captured during or after failure.
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Recovery and interventions
+      description: What changed before recovery? Record any user-performed reboot or intervention without assuming it proves a cause.
+  - type: textarea
+    id: hypotheses
+    attributes:
+      label: Hypotheses and next evidence
+      description: Separate measured facts from possible explanations and state what would distinguish them.

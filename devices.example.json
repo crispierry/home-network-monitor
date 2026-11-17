@@ -1,0 +1,11 @@
+[
+  {
+    "id": "camera",
+    "name": "Example camera",
+    "address": "192.0.2.20",
+    "mac": "02:00:00:00:02:01",
+    "attachment": "Main router (manual inventory)",
+    "inventory_at": "2026-01-01",
+    "note": "Synthetic example; replace all identity fields before use."
+  }
+]
